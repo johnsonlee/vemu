@@ -7,7 +7,7 @@ vemu 在 Apple Silicon Mac 上运行使用 GPU 渲染的 Android 16。它通过 
 > [!IMPORTANT]
 > **实验性项目。** 本仓库尚不能构建或分发 Linux 客机磁盘。仅克隆仓库无法直接启动；需要先提供下文所述的预配置客机。GPU 渲染路径只在一台 M3 Max Mac 上验证过，尚无性能基准测试结论。
 
-UTM 提供 QEMU，但不会自动提供此启动脚本所需的 Linux 系统。`emulator.sh` 会直接打开 `disk.raw`；该客机必须事先具备 Docker Compose、Binder/ashmem 支持和 virtio-gpu 渲染节点。自动构建客机的流程尚未实现。
+测试用的 `disk.raw` 是从已停止的 [Colima](https://github.com/abiosoft/colima)/Lima ARM64 Ubuntu 客机克隆的；Docker 和 Binder/ashmem 支持先在该客机中准备好。随后 `emulator.sh` 使用 UTM 的 QEMU 直接启动磁盘副本，提供 VirGL 渲染设备。Colima 用于准备磁盘，不参与 vemu 的运行。Colima 初始化和磁盘交接目前尚未自动化。
 
 ## 工作原理
 
@@ -19,6 +19,10 @@ Mac adb :5556 → QEMU 端口转发 → 客机 Docker :5555 → Android adbd
 ```
 
 Mac 同时运行一个 QEMU 客机和一个活动的 Android 容器。Docker Compose **运行在 Linux 客机内**。启动脚本将真实的 Binderfs 设备节点映射进容器，然后检查 Android 是否开机以及 SurfaceFlinger 的渲染器，确认后才报告成功。
+
+仓库包含用于 Redroid 的 [`compose.yaml`](compose.yaml)，以及安装 APK 时额外使用的 [`compose.apk.yaml`](compose.apk.yaml)。`emulator.sh start` 将这些文件和机型配置复制到客机的 `/opt/vemu/`，然后在客机中运行 `docker compose up -d --force-recreate`。Mac 脚本管理 QEMU，Compose 管理 Android 容器。
+
+客机磁盘可以像本次测试一样由 Colima 提供，但启动 Colima profile 不会启动 vemu 使用的 QEMU/VirGL 配置。复制磁盘或交给 vemu 启动之前，需要先停止 Colima 虚拟机；两个启动器不能同时写入同一磁盘。
 
 ## 运行条件
 
@@ -115,7 +119,7 @@ adb -s 127.0.0.1:5556 shell dumpsys SurfaceFlinger | grep '^GLES:'
 
 ## 已知限制
 
-- 目前没有客机磁盘的自动准备流程，也未提供客机镜像。当前脚本要求客机具备上述 ARM64 能力和网络配置。
+- 目前没有自动化的 Colima 初始化、磁盘克隆流程，也未提供客机镜像。当前脚本要求客机具备上述 ARM64 能力和网络配置。
 - Redroid 容器在专用客机内以 Docker `privileged` 权限运行，并映射 Binder 设备。
 - 配置只改变可见的型号和屏幕属性。构建指纹、WebView 版本和底层硬件仍属于 Redroid。应用可以覆盖自己的 User-Agent；这些配置不会提供真正的 Samsung 或 Google 固件，也不能提供设备完整性证明。参见 [Android WebSettings API](https://developer.android.com/reference/android/webkit/WebSettings)。
 - GPU 功能目前只在一种 Mac 配置上验证过。其他 Apple Silicon Mac 和客机内核仍需验证。

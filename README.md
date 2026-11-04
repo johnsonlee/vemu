@@ -7,7 +7,7 @@ vemu runs Android 16 on Apple Silicon macOS with GPU-backed rendering. It starts
 > [!IMPORTANT]
 > **Experimental setup.** The repository does not build or distribute the Linux guest disk. A fresh clone will not start until you provide the preconfigured guest described below. The GPU path has been verified on one M3 Max Mac; no performance benchmark is claimed.
 
-UTM supplies QEMU, but not the Linux installation this launcher expects. `emulator.sh` opens `disk.raw` directly; that guest must already have Docker Compose, Binder/ashmem support, and a virtio-gpu render node. Automating that guest build is still outstanding.
+The tested `disk.raw` was cloned from a stopped [Colima](https://github.com/abiosoft/colima)/Lima ARM64 Ubuntu guest after Docker and Binder/ashmem support were set up there. `emulator.sh` then boots that copy directly with UTM's QEMU to expose the VirGL render device. Colima was used to prepare the disk; it is not part of the vemu runtime. Automating the Colima setup and disk handoff is still outstanding.
 
 ## How it works
 
@@ -19,6 +19,10 @@ Mac adb :5556 → QEMU port forward → guest Docker :5555 → Android adbd
 ```
 
 The Mac runs one QEMU guest and one active Android container at a time. Docker Compose runs **inside the Linux guest**. The launch script bind mounts real Binderfs nodes into the container, then checks Android boot and the SurfaceFlinger renderer before reporting success.
+
+The repository includes [`compose.yaml`](compose.yaml) for Redroid and [`compose.apk.yaml`](compose.apk.yaml) for the optional APK bind mount. `emulator.sh start` copies these files and the selected profiles into `/opt/vemu/` in the guest, then runs `docker compose up -d --force-recreate` there. The Mac script manages QEMU; Compose manages the Android container.
+
+The guest disk can originate from Colima, as it did in the tested setup, but starting a Colima profile does not start vemu's QEMU/VirGL configuration. Stop the Colima VM before copying or booting its disk in vemu; the two launchers must not write the same disk at once.
 
 ## Requirements
 
@@ -115,7 +119,7 @@ Expect `sys.boot_completed=1`, the selected model and screen settings, and a ren
 
 ## Known limitations
 
-- There is no guest disk bootstrap or distributed guest image yet. The current script expects the specific ARM64 guest capabilities and network configuration above.
+- There is no automated Colima setup, disk clone, or distributed guest image yet. The current script expects the specific ARM64 guest capabilities and network configuration above.
 - The Redroid container runs with Docker `privileged` access and mapped Binder devices inside the dedicated guest.
 - Profiles change visible model and display properties. The build fingerprint, WebView version, and underlying hardware remain Redroid. Apps may override their own User-Agent; these profiles do not provide genuine Samsung or Google firmware or device integrity attestation. See the [Android WebSettings API](https://developer.android.com/reference/android/webkit/WebSettings).
 - GPU functionality has been checked on one Mac configuration. Other Apple Silicon Macs and guest kernels need verification.
