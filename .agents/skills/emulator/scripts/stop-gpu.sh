@@ -22,7 +22,8 @@ fi
 name="${name:-vemu}"
 [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || { printf 'Invalid name: %s\n' "$name" >&2; exit 2; }
 pidfile="$gpu_dir/qemu.pid"
-label=io.github.johnsonlee.vemu.qemu
+label=io.johnsonlee.vemu
+legacy_label=io.github.johnsonlee.vemu.qemu
 if [[ ! -f "$pidfile" ]] || ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
     printf 'GPU VM is stopped\n'
     exit 0
@@ -36,6 +37,7 @@ for _ in {1..30}; do
         rm -f "$pidfile"
         rm -f "$gpu_dir/active-name"
         launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || true
+        launchctl bootout "gui/$(id -u)/$legacy_label" >/dev/null 2>&1 || true
         printf 'GPU VM stopped; Android data retained\n'
         exit 0
     fi

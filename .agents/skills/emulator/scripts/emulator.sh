@@ -67,7 +67,8 @@ ssh_key="$gpu_dir/ssh_key"
 loader="$gpu_dir/qemu-loader"
 pidfile="$gpu_dir/qemu.pid"
 plist="$gpu_dir/qemu.launchd.plist"
-label=io.github.johnsonlee.vemu.qemu
+label=io.johnsonlee.vemu
+legacy_label=io.github.johnsonlee.vemu.qemu
 
 for required in "$qemu_lib" "$qemu_resources/edk2-aarch64-code.fd" "$disk" "$ssh_key"; do
     test -e "$required" || { printf 'Missing %s\n' "$required" >&2; exit 1; }
@@ -109,6 +110,7 @@ job = {
 Path(plist).write_bytes(plistlib.dumps(job))
 PY
     launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || true
+    launchctl bootout "gui/$(id -u)/$legacy_label" >/dev/null 2>&1 || true
     launchctl bootstrap "gui/$(id -u)" "$plist"
     for _ in {1..10}; do
         qemu_pid="$(launchctl print "gui/$(id -u)/$label" 2>/dev/null | awk '/^[[:space:]]*pid = / { print $3; exit }')"
