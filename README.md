@@ -1,65 +1,108 @@
 # vemu
 
-在 Apple Silicon Mac 上运行 GPU 加速的 Android 16。vemu 用 UTM 的 QEMU 启动 ARM64 Linux 客机，借助 `virtio-gpu-gl-pci` / VirGL 把 Redroid 的 OpenGL 绘制交给 macOS 的 ANGLE/Metal。Android 容器由 Docker Compose 管理，机型配置通过只读 `build.prop` 文件映射切换。
+[简体中文](README.zh.md) · [MIT License](LICENSE)
 
-已在 Apple M3 Max、macOS 14.3、UTM 4.6.5 / QEMU 9.1.2 上验证：Android 16 正常开机，SurfaceFlinger 报告 `virgl (ANGLE (Apple, Apple M3 Max, OpenGL 4.1 Metal - 88))`，Android 应用使用 Skia OpenGL 绘制。这是功能验证，未做性能基准测试。
+vemu runs Android 16 on Apple Silicon macOS with GPU-backed rendering. It starts an ARM64 Linux guest with UTM's QEMU, runs [Redroid](https://github.com/remote-android/redroid-doc) through Docker Compose, and sends Android OpenGL work through VirGL and ANGLE to the Mac GPU. Device profiles select Android properties and display settings.
 
-## 运行前提
+> [!IMPORTANT]
+> **Experimental setup.** The repository does not build or distribute the Linux guest disk. A fresh clone will not start until you provide the preconfigured guest described below. The GPU path has been verified on one M3 Max Mac; no performance benchmark is claimed.
 
-- Apple Silicon Mac，已安装 `clang`、`codesign`、`ssh`、`adb`；查看 Android 窗口可用 `scrcpy`。
-- `~/.local/share/vemu/UTM.app`：官方 UTM 4.6.5 应用，含 QEMU dylib 和 ARM64 UEFI 固件。
-- `~/.local/share/vemu/disk.raw`：预先配置好的 ARM64 Linux 磁盘，包含 Docker Compose、Binder/ashmem 内核模块及能访问 `/dev/dri/renderD128` 的 virtio-gpu 驱动。
-- `~/.local/share/vemu/ssh_key`：可登录该客机的私钥。客机用户名默认与 Mac 当前用户名相同，且应具有免交互 `sudo` 权限。
+UTM supplies QEMU, but not the Linux installation this launcher expects. `emulator.sh` opens `disk.raw` directly; that guest must already have Docker Compose, Binder/ashmem support, and a virtio-gpu render node. Automating that guest build is still outstanding.
 
-运行资产不会提交到 Git。本仓库暂未自动创建 Linux 磁盘；脚本针对已准备好的专用客机，网卡 MAC 固定为 `52:55:55:1d:5c:cd`，客机网络配置需与之匹配。已有资产放在别处时，可设 `VEMU_HOME`；客机用户名不同时，可设 `VEMU_GUEST_USER`。
+## How it works
 
-## 启动与停止
+```text
+Android app → Redroid container → Linux virtio-gpu/VirGL
+            → UTM QEMU (HVF) → ANGLE/Metal → Mac GPU
 
-```bash
-./.agents/skills/emulator/scripts/emulator.sh start
-scrcpy -s 127.0.0.1:5556
-./.agents/skills/emulator/scripts/emulator.sh stop
+Mac adb :5556 → QEMU port forward → guest Docker :5555 → Android adbd
 ```
 
-默认 profile 为 `default`，它是 `pixel-10-pro` 的符号链接。要切换机型或为当前容器命名：
+The Mac runs one QEMU guest and one active Android container at a time. Docker Compose runs **inside the Linux guest**. The launch script bind mounts real Binderfs nodes into the container, then checks Android boot and the SurfaceFlinger renderer before reporting success.
 
-```bash
-./.agents/skills/emulator/scripts/emulator.sh start --profile s25-ultra --name test-s25
-adb devices -l   # device:test-s25；model:SM-S938B
-./.agents/skills/emulator/scripts/emulator.sh stop
+## Requirements
+
+| Location | Requirement |
+| --- | --- |
+| Mac | Apple Silicon macOS; `clang`, `codesign`, Python 3, SSH, and [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools) (`adb`). [scrcpy](https://github.com/Genymobile/scrcpy) is optional for a display window. |
+| Runtime directory | `~/.local/share/vemu/UTM.app` from [UTM](https://docs.getutm.app/installation/macos/) 4.6.5, `disk.raw`, and an SSH private key named `ssh_key`. |
+| Linux guest | ARM64 Linux with SSH, passwordless `sudo`, Docker Compose, loadable `binder_linux` and `ashmem_linux` modules, and a working `/dev/dri/renderD128`. The guest network must use MAC `52:55:55:1d:5c:cd`. |
+
+The tested combination is Apple M3 Max, macOS 14.3, UTM 4.6.5 / QEMU 9.1.2, and `redroid/redroid:16.0.0_64only-latest`. UTM, the guest disk, SSH keys, APKs, and Android data volumes are not committed to Git. The launch script uses 4 vCPUs and 6 GiB guest RAM.
+
+`VEMU_HOME` can point to a different runtime directory, and `VEMU_GUEST_USER` can select a Linux guest username other than the current Mac username. These are environment variables; they are not CLI options.
+
+## Quick start with a prepared guest
+
+1. Place `UTM.app`, `disk.raw`, and `ssh_key` in `~/.local/share/vemu/`. The key must log into the guest user, which needs passwordless `sudo`.
+2. Clone this repository and start the default Pixel 10 Pro profile:
+
+   ```bash
+   git clone https://github.com/johnsonlee/vemu.git
+   cd vemu
+   ./.agents/skills/emulator/scripts/emulator.sh start
+   ```
+
+3. Connect to the Android display, if desired:
+
+   ```bash
+   scrcpy -s 127.0.0.1:5556
+   ```
+
+4. Stop the guest without deleting Android data:
+
+   ```bash
+   ./.agents/skills/emulator/scripts/emulator.sh stop
+   ```
+
+The launch script compiles and signs its small QEMU loader on first use, provisions Binderfs in the guest, syncs Compose and profile files, creates the selected data volume, and waits for Android and VirGL. SSH listens on Mac `127.0.0.1:2223`; ADB listens on Mac `127.0.0.1:5556`.
+
+## CLI
+
+```text
+emulator.sh start [--profile PROFILE] [--name NAME] [--apk /path/to/app.apk]
+emulator.sh stop [--name NAME]
 ```
 
-`--name` 同时设置 Docker 容器名和 `adb devices -l` 的 `device:` 字段；`model:` 仍取自机型 profile。ADB 的 serial 由端口转发决定，仍是 `127.0.0.1:5556`。单个 QEMU 客机同一时间运行一个 Android 容器。Mac 上 SSH 只监听 `127.0.0.1:2223`，ADB 只监听 `127.0.0.1:5556`。停止时保留 Android 数据卷。
+| Option | Effect |
+| --- | --- |
+| `--profile` | Selects `default`, `pixel-10-pro`, or `s25-ultra`. `default` is a symlink to `pixel-10-pro`. |
+| `--name` | Sets the Docker container name and Android `ro.product.device`, shown as `device:` by `adb devices -l`. Default: `vemu`. It does **not** change the ADB serial (`127.0.0.1:5556`) or the profile's model. |
+| `--apk` | Installs an APK during `start`. The script copies it from the Mac to the Linux guest once per SHA-256 hash, bind mounts it read-only as `/data/local/tmp/app.apk`, and runs `pm install -r` inside the container. It does not copy the APK through ADB. |
 
-启动时安装 APK：
+Examples:
 
 ```bash
-./.agents/skills/emulator/scripts/emulator.sh start --profile default --apk /absolute/path/app.apk
+./.agents/skills/emulator/scripts/emulator.sh start --profile s25-ultra --name s25-test
+./.agents/skills/emulator/scripts/emulator.sh start --apk /absolute/path/app.apk
+adb devices -l
 ```
 
-脚本按 SHA-256 将 Mac 上的 APK 传到 Linux 客机的 `/opt/vemu/apks/`，相同内容再次启动会直接使用缓存。`compose.apk.yaml` 把该文件只读映射到容器内的 `/data/local/tmp/app.apk`，然后在容器内运行 `pm install -r`。这里没有 ADB 文件传输；Mac 与 Linux 客机之间首次传输仍是必要的，因为当前 QEMU 配置没有共享文件系统。
+The first APK transfer from the Mac into the guest is still necessary because this QEMU setup has no shared filesystem. Reusing the same APK skips that transfer.
 
-## 机型配置
+## Device profiles
 
-| Profile | Android 型号 | 屏幕像素 | 逻辑 DPI | 数据卷 |
+| Profile | Reported model | Display pixels | Logical DPI | Docker data volume |
 | --- | --- | ---: | ---: | --- |
-| `default` → `pixel-10-pro` | Pixel 10 Pro | 1280×2856 | 480 | `vemu-pixel-10-pro-data` |
-| `s25-ultra` | Galaxy S25 Ultra (`SM-S938B`) | 1440×3120 | 480* | `vemu-s25-ultra-data` |
+| `default` → `pixel-10-pro` | Pixel 10 Pro | 1280 × 2856 | 480 | `vemu-pixel-10-pro-data` |
+| `s25-ultra` | Galaxy S25 Ultra (`SM-S938B`) | 1440 × 3120 | 480* | `vemu-s25-ultra-data` |
 
-屏幕像素来自 [Google](https://store.google.com/product/pixel_10_pro_specs?hl=en-US) 与 [Samsung](https://www.samsung.com/co/business/smartphones/galaxy-s/galaxy-s25-ultra-titanium-silverblue-1tb-sm-s938bzbultc/) 的原生分辨率规格。*S25 Ultra 的 480 是本配置的布局密度选择，并非厂商公布的物理 PPI 或真机默认逻辑 DPI。Pixel 10 Pro 的 480 参考 Android 虚拟设备基线。
+Display pixel counts come from [Google](https://store.google.com/product/pixel_10_pro_specs?hl=en-US) and [Samsung](https://www.samsung.com/co/business/smartphones/galaxy-s/galaxy-s25-ultra-titanium-silverblue-1tb-sm-s938bzbultc/). *The S25 Ultra logical DPI is a profile choice, not a verified factory default or the panel's physical PPI. The Pixel 10 Pro value follows an Android Virtual Device baseline, not a measured retail device.
 
-每套配置在 `profiles/<name>/profile.env` 中声明屏幕参数和数据卷。`compose.yaml` 将六个分区的完整属性文件只读映射到容器：system、vendor、product、odm、system_ext、vendor_dlkm。顶层 `ro.product.*` 值由这些分区合成，只改 system/vendor 两个文件会留下不一致的型号。基线文件取自 Redroid 16 镜像。修改 profile 定义后重新生成文件并启动：
+Each profile has a `profile.env` file and six complete, read-only mapped `build.prop` files for `system`, `vendor`, `product`, `odm`, `system_ext`, and `vendor_dlkm`. Android derives top-level `ro.product.*` values from these partitions. Profile data volumes are separate; `default` and `pixel-10-pro` share one volume because they are the same profile.
+
+To edit or add a profile, update `PROFILES` in [`generate-profiles.py`](.agents/skills/emulator/scripts/generate-profiles.py), provide its `profile.env`, regenerate the property files, and review the diff:
 
 ```bash
 python3 .agents/skills/emulator/scripts/generate-profiles.py
-./.agents/skills/emulator/scripts/emulator.sh start --profile default
 ```
 
-机型信息会影响 Android `Build.MODEL` 和默认 WebView UA 的型号字段。镜像自身的构建号、WebView 版本、构建指纹及硬件实现仍是 Redroid；应用也可以单独覆盖 UA。这套配置不会变成 Samsung/Google 固件，也不保证与真机 UA 完全一致或通过设备完整性检查。[Android WebSettings API](https://developer.android.com/reference/android/webkit/WebSettings) 说明了默认 UA 与应用级覆盖。
+The checked-in base property files came from the Redroid 16 image used in testing. The image tag ends in `latest` and may change; review and refresh the base files and generated profiles before upgrading the image.
 
-## 验证
+## Verify a running instance
 
 ```bash
+adb devices -l
 adb -s 127.0.0.1:5556 shell getprop sys.boot_completed
 adb -s 127.0.0.1:5556 shell getprop ro.product.model
 adb -s 127.0.0.1:5556 shell getprop ro.product.device
@@ -68,4 +111,19 @@ adb -s 127.0.0.1:5556 shell wm density
 adb -s 127.0.0.1:5556 shell dumpsys SurfaceFlinger | grep '^GLES:'
 ```
 
-应看到 `sys.boot_completed=1`、所选型号、`--name` 指定的 device 值和屏幕参数，以及包含 `virgl` 与 `Apple` 的 GLES 渲染器。项目维护流程见 [emulator Skill](.agents/skills/emulator/SKILL.md)。
+Expect `sys.boot_completed=1`, the selected model and screen settings, and a renderer containing `virgl` and `Apple`. On the tested M3 Max, SurfaceFlinger reported `virgl (ANGLE (Apple, Apple M3 Max, OpenGL 4.1 Metal - 88))`. This verifies the graphics path, not frame rate or performance.
+
+## Known limitations
+
+- There is no guest disk bootstrap or distributed guest image yet. The current script expects the specific ARM64 guest capabilities and network configuration above.
+- The Redroid container runs with Docker `privileged` access and mapped Binder devices inside the dedicated guest.
+- Profiles change visible model and display properties. The build fingerprint, WebView version, and underlying hardware remain Redroid. Apps may override their own User-Agent; these profiles do not provide genuine Samsung or Google firmware or device integrity attestation. See the [Android WebSettings API](https://developer.android.com/reference/android/webkit/WebSettings).
+- GPU functionality has been checked on one Mac configuration. Other Apple Silicon Macs and guest kernels need verification.
+
+## Contributing
+
+Issues and pull requests are welcome. For runtime bugs, include the Mac model and macOS version, guest kernel and Docker Compose versions, selected profile, `adb devices -l`, and the SurfaceFlinger `GLES:` line. Remove private keys, APKs, account data, and other sensitive logs before attaching files. Run `shellcheck` on changed shell scripts and `docker compose config --quiet` for affected profiles; see the project [emulator skill](.agents/skills/emulator/SKILL.md) for runtime invariants.
+
+## License
+
+[MIT](LICENSE). UTM, Redroid, Android, and scrcpy are separate projects under their own licenses.
