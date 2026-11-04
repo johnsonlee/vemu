@@ -5,7 +5,7 @@ description: Maintain and run this project's macOS GPU accelerated Redroid emula
 
 # vemu emulator
 
-Use this skill for work on the emulator in this repository. Read the root `README.md` and `compose.yaml` for the current setup. The launch, stop, guest provisioning, and profile generation helpers live in this skill's `scripts/` directory.
+Use this skill for work on the emulator in this repository. Read the root `README.md` and `compose.yaml` for the current setup. The launch, stop, guest provisioning, and profile generation helpers live in this skill's `scripts/` directory. The QEMU loader source is in `src/`, and its macOS signing entitlements are in `assets/`.
 
 ## Runtime invariants
 

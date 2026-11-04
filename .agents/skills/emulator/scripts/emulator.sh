@@ -3,6 +3,7 @@
 # shellcheck disable=SC2029
 set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
+skill_dir="$(dirname "$script_dir")"
 cd "$script_dir/../../../.."
 if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
     printf 'Usage: %s start|stop [--profile PROFILE] [--name NAME] [--apk PATH]\n' "$0"
@@ -72,9 +73,9 @@ for required in "$qemu_lib" "$qemu_resources/edk2-aarch64-code.fd" "$disk" "$ssh
     test -e "$required" || { printf 'Missing %s\n' "$required" >&2; exit 1; }
 done
 
-if [[ ! -x "$loader" || "$script_dir/qemu-loader.c" -nt "$loader" || "$script_dir/gpu-entitlements.plist" -nt "$loader" ]]; then
-    clang -Wl,-rpath,"$utm_app/Contents/Frameworks" -o "$loader" "$script_dir/qemu-loader.c"
-    codesign --force --sign - --entitlements "$script_dir/gpu-entitlements.plist" "$loader" >/dev/null
+if [[ ! -x "$loader" || "$skill_dir/src/qemu-loader.c" -nt "$loader" || "$skill_dir/assets/gpu-entitlements.plist" -nt "$loader" ]]; then
+    clang -Wl,-rpath,"$utm_app/Contents/Frameworks" -o "$loader" "$skill_dir/src/qemu-loader.c"
+    codesign --force --sign - --entitlements "$skill_dir/assets/gpu-entitlements.plist" "$loader" >/dev/null
 fi
 
 if [[ ! -f "$pidfile" ]] || ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
