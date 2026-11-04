@@ -6,11 +6,11 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 skill_dir="$(dirname "$script_dir")"
 cd "$script_dir/../../../.."
 if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
-    printf 'Usage: %s start|stop [--profile PROFILE] [--name NAME] [--apk PATH]\n' "$0"
+    printf 'Usage: %s start|stop|setup [--profile PROFILE] [--name NAME] [--apk PATH]\n' "$0"
     exit 0
 fi
 if (($# == 0)); then
-    printf 'Usage: %s start|stop [--profile PROFILE] [--name NAME] [--apk PATH]\n' "$0" >&2
+    printf 'Usage: %s start|stop|setup [--profile PROFILE] [--name NAME] [--apk PATH]\n' "$0" >&2
     exit 2
 fi
 action="$1"
@@ -32,12 +32,18 @@ while (($#)); do
             esac
             shift 2 ;;
         --help|-h)
-            printf 'Usage: %s start|stop [--profile PROFILE] [--name NAME] [--apk PATH]\n' "$0"
+            printf 'Usage: %s start|stop|setup [--profile PROFILE] [--name NAME] [--apk PATH]\n' "$0"
             exit 0 ;;
         *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
     esac
 done
-[[ "$action" == start || "$action" == stop ]] || { printf 'Invalid action: %s\n' "$action" >&2; exit 2; }
+[[ "$action" == start || "$action" == stop || "$action" == setup ]] || { printf 'Invalid action: %s\n' "$action" >&2; exit 2; }
+if [[ "$action" == setup ]]; then
+    [[ -z "$apk" && -z "$name" && "$profile" == default ]] || {
+        printf 'setup does not accept profile, name, or APK options\n' >&2; exit 2;
+    }
+    exec "$script_dir/setup.sh"
+fi
 if [[ "$action" == stop ]]; then
     [[ -z "$apk" ]] || { printf '%s\n' '--apk only applies to start' >&2; exit 2; }
     if [[ -z "$name" ]]; then
@@ -52,6 +58,9 @@ name="${name:-vemu}"
     printf 'Unknown profile: %s\n' "$profile" >&2
     exit 1
 }
+if [[ ! -f "$gpu_dir/disk.raw" || ! -f "$gpu_dir/ssh_key" || ! -f "$gpu_dir/UTM.app/Contents/Frameworks/qemu-aarch64-softmmu.framework/Versions/A/qemu-aarch64-softmmu" ]]; then
+    "$script_dir/setup.sh"
+fi
 data_volume="$(sed -n 's/^ANDROID_DATA_VOLUME=//p' "profiles/$profile/profile.env")"
 [[ "$data_volume" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || {
     printf 'Invalid Android data volume in profile: %s\n' "$profile" >&2
@@ -69,6 +78,11 @@ pidfile="$gpu_dir/qemu.pid"
 plist="$gpu_dir/qemu.launchd.plist"
 label=io.johnsonlee.vemu
 legacy_label=io.github.johnsonlee.vemu.qemu
+guest_mac=52:55:55:1d:5c:cd
+if [[ -f "$gpu_dir/guest-mac" ]]; then guest_mac="$(cat "$gpu_dir/guest-mac")"; fi
+[[ "$guest_mac" =~ ^([0-9a-f]{2}:){5}[0-9a-f]{2}$ ]] || {
+    printf 'Invalid guest MAC: %s\n' "$guest_mac" >&2; exit 1;
+}
 
 for required in "$qemu_lib" "$qemu_resources/edk2-aarch64-code.fd" "$disk" "$ssh_key"; do
     test -e "$required" || { printf 'Missing %s\n' "$required" >&2; exit 1; }
@@ -81,19 +95,19 @@ fi
 
 if [[ ! -f "$pidfile" ]] || ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
     rm -f "$gpu_dir/monitor.sock" "$gpu_dir/spice.sock"
-    python3 - "$plist" "$loader" "$qemu_lib" "$qemu_resources" "$disk" "$gpu_dir" "$label" <<'PY'
+    python3 - "$plist" "$loader" "$qemu_lib" "$qemu_resources" "$disk" "$gpu_dir" "$label" "$guest_mac" <<'PY'
 import plistlib
 import sys
 from pathlib import Path
 
-plist, loader, library, resources, disk, directory, label = sys.argv[1:]
+plist, loader, library, resources, disk, directory, label, guest_mac = sys.argv[1:]
 arguments = [
     loader, library, "-L", resources, "-machine", "virt", "-accel", "hvf",
     "-cpu", "host", "-smp", "4", "-m", "6144", "-bios",
     f"{resources}/edk2-aarch64-code.fd", "-drive",
     f"if=none,file={disk},format=raw,id=hd0", "-device", "virtio-blk-pci,drive=hd0",
     "-netdev", "user,id=net0,hostfwd=tcp:127.0.0.1:2223-:22,hostfwd=tcp:127.0.0.1:5556-:5555",
-    "-device", "virtio-net-pci,netdev=net0,mac=52:55:55:1d:5c:cd",
+    "-device", f"virtio-net-pci,netdev=net0,mac={guest_mac}",
     "-device", "virtio-gpu-gl-pci", "-display", "none", "-spice",
     f"unix=on,addr={directory}/spice.sock,disable-ticketing=on,gl=on",
     "-serial", f"file:{directory}/serial.log", "-monitor",

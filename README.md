@@ -5,9 +5,9 @@
 vemu runs Android 16 on Apple Silicon macOS with GPU-backed rendering. It starts an ARM64 Linux guest with UTM's QEMU, runs [Redroid](https://github.com/remote-android/redroid-doc) through Docker Compose, and sends Android OpenGL work through VirGL and ANGLE to the Mac GPU. Device profiles select Android properties and display settings.
 
 > [!IMPORTANT]
-> **Experimental setup.** The repository does not build or distribute the Linux guest disk. A fresh clone will not start until you provide the preconfigured guest described below. The GPU path has been verified on one M3 Max Mac; no performance benchmark is claimed.
+> **Experimental setup.** First start downloads UTM and creates a dedicated Linux guest disk. The complete fresh setup has been verified on one M3 Max Mac; other Apple Silicon Macs and future guest kernels need testing. No performance benchmark is claimed.
 
-The tested `disk.raw` was cloned from a stopped [Colima](https://github.com/abiosoft/colima)/Lima ARM64 Ubuntu guest after Docker and Binder/ashmem support were set up there. `emulator.sh` then boots that copy directly with UTM's QEMU to expose the VirGL render device. Colima was used to prepare the disk; it is not part of the vemu runtime. Automating the Colima setup and disk handoff is still outstanding.
+On first start, vemu creates a dedicated [Colima](https://github.com/abiosoft/colima)/Lima ARM64 Ubuntu guest, prepares Docker, Binder/ashmem, and SSH, stops Colima, and copies its root disk. `emulator.sh` then boots that copy directly with UTM's QEMU to expose the VirGL render device. Colima prepares the disk; it does not run alongside vemu.
 
 ## How it works
 
@@ -22,24 +22,23 @@ The Mac runs one QEMU guest and one active Android container at a time. Docker C
 
 The repository includes [`compose.yaml`](compose.yaml) for Redroid and [`compose.apk.yaml`](compose.apk.yaml) for the optional APK bind mount. `emulator.sh start` copies these files and the selected profiles into `/opt/vemu/` in the guest, then runs `docker compose up -d --force-recreate` there. The Mac script manages QEMU; Compose manages the Android container.
 
-The guest disk can originate from Colima, as it did in the tested setup, but starting a Colima profile does not start vemu's QEMU/VirGL configuration. Stop the Colima VM before copying or booting its disk in vemu; the two launchers must not write the same disk at once.
+The setup script stops the `vemu-seed` Colima profile before copying its disk. It retains the stopped seed profile for troubleshooting. vemu uses a separate disk copy, so Colima never writes to vemu's active disk.
 
 ## Requirements
 
 | Location | Requirement |
 | --- | --- |
-| Mac | Apple Silicon macOS; `clang`, `codesign`, Python 3, SSH, and [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools) (`adb`). [scrcpy](https://github.com/Genymobile/scrcpy) is optional for a display window. |
-| Runtime directory | `~/.local/share/vemu/UTM.app` from [UTM](https://docs.getutm.app/installation/macos/) 4.6.5, `disk.raw`, and an SSH private key named `ssh_key`. |
-| Linux guest | ARM64 Linux with SSH, passwordless `sudo`, Docker Compose, loadable `binder_linux` and `ashmem_linux` modules, and a working `/dev/dri/renderD128`. The guest network must use MAC `52:55:55:1d:5c:cd`. |
+| Mac | Apple Silicon macOS, [Homebrew](https://brew.sh/), Xcode Command Line Tools (`clang`), Python 3, and SSH. [scrcpy](https://github.com/Genymobile/scrcpy) is optional for a display window. |
+| First start | Network access and free disk space for a 30 GiB guest root disk, its copy, UTM, Linux packages, and the Redroid image. The script installs missing Colima, Docker CLI, and [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools) with Homebrew. |
+| Runtime directory | `~/.local/share/vemu/` holds the downloaded or linked UTM 4.6.5 app, `disk.raw`, a dedicated SSH key, and the guest NIC MAC. These are created automatically. |
 
 The tested combination is Apple M3 Max, macOS 14.3, UTM 4.6.5 / QEMU 9.1.2, and `redroid/redroid:16.0.0_64only-latest`. UTM, the guest disk, SSH keys, APKs, and Android data volumes are not committed to Git. The launch script uses 4 vCPUs and 6 GiB guest RAM.
 
-`VEMU_HOME` can point to a different runtime directory, and `VEMU_GUEST_USER` can select a Linux guest username other than the current Mac username. These are environment variables; they are not CLI options.
+`VEMU_HOME` can point to a different runtime directory. `VEMU_GUEST_USER` can select another username for a manually prepared guest; automated setup uses the current Mac username. These are environment variables, not CLI options.
 
-## Quick start with a prepared guest
+## Quick start
 
-1. Place `UTM.app`, `disk.raw`, and `ssh_key` in `~/.local/share/vemu/`. The key must log into the guest user, which needs passwordless `sudo`.
-2. Clone this repository and start the default Pixel 10 Pro profile:
+1. Install [Homebrew](https://brew.sh/) and Xcode Command Line Tools (`xcode-select --install`) if needed. Clone the repository and start the default Pixel 10 Pro profile:
 
    ```bash
    git clone https://github.com/johnsonlee/vemu.git
@@ -47,25 +46,28 @@ The tested combination is Apple M3 Max, macOS 14.3, UTM 4.6.5 / QEMU 9.1.2, and 
    ./.agents/skills/emulator/scripts/emulator.sh start
    ```
 
-3. Connect to the Android display, if desired:
+   The first start downloads [UTM 4.6.5 from its official GitHub release](https://github.com/utmapp/UTM/releases/tag/v4.6.5) unless that version is already in `/Applications`, creates and prepares the Colima seed, copies its stopped root disk, pulls Redroid, and starts Android. It may take several minutes. Later starts reuse the disk.
+
+2. Connect to the Android display, if desired:
 
    ```bash
    scrcpy -s 127.0.0.1:5556
    ```
 
-4. Stop the guest without deleting Android data:
+3. Stop the guest without deleting Android data:
 
    ```bash
    ./.agents/skills/emulator/scripts/emulator.sh stop
    ```
 
-The launch script compiles and signs its small QEMU loader on first use, provisions Binderfs in the guest, syncs Compose and profile files, creates the selected data volume, and waits for Android and VirGL. SSH listens on Mac `127.0.0.1:2223`; ADB listens on Mac `127.0.0.1:5556`.
+Run `emulator.sh setup` to prepare the runtime without starting Android. The start command compiles and signs its small QEMU loader on first use, provisions Binderfs in the guest, syncs Compose and profile files, creates the selected data volume, and waits for Android and VirGL. SSH listens on Mac `127.0.0.1:2223`; ADB listens on Mac `127.0.0.1:5556`.
 
 ## CLI
 
 ```text
 emulator.sh start [--profile PROFILE] [--name NAME] [--apk /path/to/app.apk]
 emulator.sh stop [--name NAME]
+emulator.sh setup
 ```
 
 | Option | Effect |
@@ -119,7 +121,7 @@ Expect `sys.boot_completed=1`, the selected model and screen settings, and a ren
 
 ## Known limitations
 
-- There is no automated Colima setup, disk clone, or distributed guest image yet. The current script expects the specific ARM64 guest capabilities and network configuration above.
+- The setup path has been tested on one M3 Max Mac. It relies on Colima's current ARM64 Ubuntu kernel and a pinned ashmem DKMS source; a different guest kernel may need updated module support. No guest image is distributed.
 - The Redroid container runs with Docker `privileged` access and mapped Binder devices inside the dedicated guest.
 - Profiles change visible model and display properties. The build fingerprint, WebView version, and underlying hardware remain Redroid. Apps may override their own User-Agent; these profiles do not provide genuine Samsung or Google firmware or device integrity attestation. See the [Android WebSettings API](https://developer.android.com/reference/android/webkit/WebSettings).
 - GPU functionality has been checked on one Mac configuration. Other Apple Silicon Macs and guest kernels need verification.

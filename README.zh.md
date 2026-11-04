@@ -5,9 +5,9 @@
 vemu 在 Apple Silicon Mac 上运行使用 GPU 渲染的 Android 16。它通过 UTM 的 QEMU 启动 ARM64 Linux 客机，在客机中通过 Docker Compose 运行 [Redroid](https://github.com/remote-android/redroid-doc)，再经 VirGL 和 ANGLE 将 Android 的 OpenGL 绘制交给 Mac GPU。设备配置可切换 Android 系统属性和屏幕参数。
 
 > [!IMPORTANT]
-> **实验性项目。** 本仓库尚不能构建或分发 Linux 客机磁盘。仅克隆仓库无法直接启动；需要先提供下文所述的预配置客机。GPU 渲染路径只在一台 M3 Max Mac 上验证过，尚无性能基准测试结论。
+> **实验性项目。** 首次启动会自动下载 UTM 并创建专用的 Linux 客机磁盘。完整的全新安装流程只在一台 M3 Max Mac 上验证过；其他 Apple Silicon Mac 和未来的客机内核仍需测试。尚无性能基准测试结论。
 
-测试用的 `disk.raw` 是从已停止的 [Colima](https://github.com/abiosoft/colima)/Lima ARM64 Ubuntu 客机克隆的；Docker 和 Binder/ashmem 支持先在该客机中准备好。随后 `emulator.sh` 使用 UTM 的 QEMU 直接启动磁盘副本，提供 VirGL 渲染设备。Colima 用于准备磁盘，不参与 vemu 的运行。Colima 初始化和磁盘交接目前尚未自动化。
+首次启动时，vemu 会创建专用的 [Colima](https://github.com/abiosoft/colima)/Lima ARM64 Ubuntu 客机，准备 Docker、Binder/ashmem 和 SSH，停止 Colima 后复制其根磁盘。随后 `emulator.sh` 使用 UTM 的 QEMU 直接启动磁盘副本，提供 VirGL 渲染设备。Colima 负责准备磁盘，不与 vemu 同时运行。
 
 ## 工作原理
 
@@ -22,24 +22,23 @@ Mac 同时运行一个 QEMU 客机和一个活动的 Android 容器。Docker Com
 
 仓库包含用于 Redroid 的 [`compose.yaml`](compose.yaml)，以及安装 APK 时额外使用的 [`compose.apk.yaml`](compose.apk.yaml)。`emulator.sh start` 将这些文件和机型配置复制到客机的 `/opt/vemu/`，然后在客机中运行 `docker compose up -d --force-recreate`。Mac 脚本管理 QEMU，Compose 管理 Android 容器。
 
-客机磁盘可以像本次测试一样由 Colima 提供，但启动 Colima profile 不会启动 vemu 使用的 QEMU/VirGL 配置。复制磁盘或交给 vemu 启动之前，需要先停止 Colima 虚拟机；两个启动器不能同时写入同一磁盘。
+准备脚本会先停止 `vemu-seed` Colima profile，再复制磁盘。已停止的种子 profile 会保留，便于排查问题；vemu 使用独立副本，Colima 不会写入 vemu 正在使用的磁盘。
 
 ## 运行条件
 
 | 位置 | 要求 |
 | --- | --- |
-| Mac | Apple Silicon macOS；`clang`、`codesign`、Python 3、SSH，以及包含 `adb` 的 [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)。[scrcpy](https://github.com/Genymobile/scrcpy) 可选，用于显示 Android 画面。 |
-| 运行目录 | `~/.local/share/vemu/UTM.app`，取自 [UTM](https://docs.getutm.app/installation/macos/) 4.6.5；另需 `disk.raw` 和名为 `ssh_key` 的 SSH 私钥。 |
-| Linux 客机 | ARM64 Linux，具备 SSH、免密码 `sudo`、Docker Compose、可加载的 `binder_linux` 与 `ashmem_linux` 模块，以及可用的 `/dev/dri/renderD128`。客机网络配置必须使用 MAC 地址 `52:55:55:1d:5c:cd`。 |
+| Mac | Apple Silicon macOS、[Homebrew](https://brew.sh/)、Xcode Command Line Tools（`clang`）、Python 3 和 SSH。[scrcpy](https://github.com/Genymobile/scrcpy) 可选，用于显示 Android 画面。 |
+| 首次启动 | 需要网络连接，以及足够容纳 30 GiB 客机根磁盘及其副本、UTM、Linux 软件包和 Redroid 镜像的磁盘空间。脚本会通过 Homebrew 安装缺少的 Colima、Docker CLI 和 [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)。 |
+| 运行目录 | `~/.local/share/vemu/` 保存自动下载或链接的 UTM 4.6.5、`disk.raw`、专用 SSH 密钥和客机网卡 MAC 地址。 |
 
 已验证的组合为 Apple M3 Max、macOS 14.3、UTM 4.6.5 / QEMU 9.1.2，以及 `redroid/redroid:16.0.0_64only-latest`。UTM、客机磁盘、SSH 密钥、APK 和 Android 数据卷都不会提交到 Git。启动脚本为客机分配 4 个 vCPU 和 6 GiB 内存。
 
-可以用环境变量 `VEMU_HOME` 指向其他运行目录，也可以用 `VEMU_GUEST_USER` 指定与当前 Mac 用户名不同的 Linux 客机用户名。这两个是环境变量，不是命令行选项。
+可以用 `VEMU_HOME` 指向其他运行目录。对于手工准备的客机，可以用 `VEMU_GUEST_USER` 指定其他 Linux 用户名；自动准备流程使用当前 Mac 用户名。这两个是环境变量，不是命令行选项。
 
-## 使用已准备好的客机快速开始
+## 快速开始
 
-1. 将 `UTM.app`、`disk.raw` 和 `ssh_key` 放在 `~/.local/share/vemu/`。私钥必须能登录客机用户，且该用户需要免密码 `sudo` 权限。
-2. 克隆仓库并启动默认的 Pixel 10 Pro 配置：
+1. 如尚未安装，先安装 [Homebrew](https://brew.sh/) 和 Xcode Command Line Tools（`xcode-select --install`）。克隆仓库并启动默认的 Pixel 10 Pro 配置：
 
    ```bash
    git clone https://github.com/johnsonlee/vemu.git
@@ -47,25 +46,28 @@ Mac 同时运行一个 QEMU 客机和一个活动的 Android 容器。Docker Com
    ./.agents/skills/emulator/scripts/emulator.sh start
    ```
 
-3. 如需显示 Android 画面：
+   首次启动会从 [UTM 4.6.5 官方 GitHub 发布页](https://github.com/utmapp/UTM/releases/tag/v4.6.5)下载 UTM（如果 `/Applications` 中已有该版本则直接使用），创建并配置 Colima 种子客机，复制已停止客机的根磁盘，拉取 Redroid 镜像并启动 Android。这一步可能需要几分钟；以后启动会复用磁盘。
+
+2. 如需显示 Android 画面：
 
    ```bash
    scrcpy -s 127.0.0.1:5556
    ```
 
-4. 停止客机，保留 Android 数据：
+3. 停止客机，保留 Android 数据：
 
    ```bash
    ./.agents/skills/emulator/scripts/emulator.sh stop
    ```
 
-首次使用时，启动脚本会编译并签名一个小型 QEMU 加载器，在客机中配置 Binderfs、同步 Compose 与设备配置文件、创建所选数据卷，并等待 Android 和 VirGL 就绪。Mac 上的 SSH 监听 `127.0.0.1:2223`，ADB 监听 `127.0.0.1:5556`。
+可以先运行 `emulator.sh setup`，只准备运行环境而不启动 Android。启动命令会在首次使用时编译并签名一个小型 QEMU 加载器，在客机中配置 Binderfs、同步 Compose 与设备配置文件、创建所选数据卷，并等待 Android 和 VirGL 就绪。Mac 上的 SSH 监听 `127.0.0.1:2223`，ADB 监听 `127.0.0.1:5556`。
 
 ## 命令行用法
 
 ```text
 emulator.sh start [--profile PROFILE] [--name NAME] [--apk /path/to/app.apk]
 emulator.sh stop [--name NAME]
+emulator.sh setup
 ```
 
 | 选项 | 作用 |
@@ -119,7 +121,7 @@ adb -s 127.0.0.1:5556 shell dumpsys SurfaceFlinger | grep '^GLES:'
 
 ## 已知限制
 
-- 目前没有自动化的 Colima 初始化、磁盘克隆流程，也未提供客机镜像。当前脚本要求客机具备上述 ARM64 能力和网络配置。
+- 自动准备流程只在一台 M3 Max Mac 上验证过。它依赖 Colima 当前使用的 ARM64 Ubuntu 内核和固定版本的 ashmem DKMS 源码；未来内核可能需要更新模块支持。项目不分发客机镜像。
 - Redroid 容器在专用客机内以 Docker `privileged` 权限运行，并映射 Binder 设备。
 - 配置只改变可见的型号和屏幕属性。构建指纹、WebView 版本和底层硬件仍属于 Redroid。应用可以覆盖自己的 User-Agent；这些配置不会提供真正的 Samsung 或 Google 固件，也不能提供设备完整性证明。参见 [Android WebSettings API](https://developer.android.com/reference/android/webkit/WebSettings)。
 - GPU 功能目前只在一种 Mac 配置上验证过。其他 Apple Silicon Mac 和客机内核仍需验证。
