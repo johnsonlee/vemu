@@ -1,0 +1,8 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.apk
+*.raw
+*.qcow2
+UTM.app/
+artifacts/

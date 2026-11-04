@@ -1,0 +1,42 @@
+name: vemu
+
+services:
+  android:
+    image: redroid/redroid:16.0.0_64only-latest
+    platform: linux/arm64
+    container_name: ${INSTANCE_NAME:-vemu}
+    privileged: true
+    restart: unless-stopped
+    ports:
+      # QEMU user networking forwards host 127.0.0.1:5556 to the guest NIC.
+      - "5555:5555"
+    volumes:
+      - /dev/binder:/dev/binder
+      - /dev/hwbinder:/dev/hwbinder
+      - /dev/vndbinder:/dev/vndbinder
+      - ./profiles/${DEVICE_PROFILE}/system.build.prop:/system/build.prop:ro
+      - ./profiles/${DEVICE_PROFILE}/vendor.build.prop:/vendor/build.prop:ro
+      - ./profiles/${DEVICE_PROFILE}/product.build.prop:/product/etc/build.prop:ro
+      - ./profiles/${DEVICE_PROFILE}/odm.build.prop:/odm/etc/build.prop:ro
+      - ./profiles/${DEVICE_PROFILE}/system_ext.build.prop:/system_ext/etc/build.prop:ro
+      - ./profiles/${DEVICE_PROFILE}/vendor_dlkm.build.prop:/vendor_dlkm/etc/build.prop:ro
+      - android-data:/data
+    command:
+      - androidboot.use_memfd=1
+      - androidboot.redroid_gpu_mode=host
+      - androidboot.redroid_gpu_node=/dev/dri/renderD128
+      - androidboot.redroid_width=${SCREEN_WIDTH}
+      - androidboot.redroid_height=${SCREEN_HEIGHT}
+      - androidboot.redroid_dpi=${SCREEN_DPI}
+      - ro.product.device=${INSTANCE_NAME:-vemu}
+    healthcheck:
+      test: ["CMD", "/system/bin/sh", "-c", "test \"$(getprop sys.boot_completed)\" = 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 180s
+      retries: 18
+
+volumes:
+  android-data:
+    external: true
+    name: ${ANDROID_DATA_VOLUME}
