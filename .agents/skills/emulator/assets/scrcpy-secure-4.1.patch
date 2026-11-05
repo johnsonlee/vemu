@@ -1,0 +1,25 @@
+diff --git a/server/src/main/java/com/genymobile/scrcpy/FakeContext.java b/server/src/main/java/com/genymobile/scrcpy/FakeContext.java
+index 5d41a8f..2f12c3d 100644
+--- a/server/src/main/java/com/genymobile/scrcpy/FakeContext.java
++++ b/server/src/main/java/com/genymobile/scrcpy/FakeContext.java
+@@ -19 +19 @@ public final class FakeContext extends ContextWrapper {
+-    public static final String PACKAGE_NAME = "com.android.shell";
++    public static final String PACKAGE_NAME = "android";
+@@ -77 +77 @@ public final class FakeContext extends ContextWrapper {
+-        AttributionSource.Builder builder = new AttributionSource.Builder(Process.SHELL_UID);
++        AttributionSource.Builder builder = new AttributionSource.Builder(Process.SYSTEM_UID);
+diff --git a/server/src/main/java/com/genymobile/scrcpy/video/ScreenCapture.java b/server/src/main/java/com/genymobile/scrcpy/video/ScreenCapture.java
+index 0768181..d382ede 100644
+--- a/server/src/main/java/com/genymobile/scrcpy/video/ScreenCapture.java
++++ b/server/src/main/java/com/genymobile/scrcpy/video/ScreenCapture.java
+@@ -134,2 +134,4 @@ public class ScreenCapture extends SurfaceCapture {
+-                    .createVirtualDisplay("scrcpy", inputSize.getWidth(), inputSize.getHeight(), displayId, surface);
+-            Ln.d("Display: using DisplayManager API");
++                    .createNewVirtualDisplay("scrcpy", inputSize.getWidth(), inputSize.getHeight(), displayInfo.getDpi(), surface,
++                            android.hardware.display.DisplayManager.VIRTUAL_DISPLAY_FLAG_SECURE
++                                    | android.hardware.display.DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR);
++            Ln.d("Display: using secure DisplayManager API");
+@@ -213,2 +215 @@ public class ScreenCapture extends SurfaceCapture {
+-        boolean secure = Build.VERSION.SDK_INT < AndroidVersions.API_30_ANDROID_11 || (Build.VERSION.SDK_INT == AndroidVersions.API_30_ANDROID_11
+-                && !"S".equals(Build.VERSION.CODENAME));
++        boolean secure = true;

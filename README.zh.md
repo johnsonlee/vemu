@@ -7,7 +7,7 @@ vemu 在 Apple Silicon Mac 上运行使用 GPU 渲染的 Android 16。它通过 
 > [!IMPORTANT]
 > **实验性项目。** 首次启动会自动下载 UTM 并创建专用的 Linux 客机磁盘。完整的全新安装流程只在一台 M3 Max Mac 上验证过；其他 Apple Silicon Mac 和未来的客机内核仍需测试。下文的空闲 CPU 数据是本地诊断结果，不代表一般性能基准。
 
-首次启动时，vemu 会创建专用的 [Colima](https://github.com/abiosoft/colima)/Lima ARM64 Ubuntu 客机，准备 Docker、Binder/ashmem 和 SSH，停止 Colima 后复制其根磁盘。随后 `emulator.sh` 使用 UTM 的 QEMU 直接启动磁盘副本，提供 VirGL 渲染设备。Colima 负责准备磁盘，不与 vemu 同时运行。
+首次启动时，vemu 会创建专用的 [Colima](https://github.com/abiosoft/colima)/Lima ARM64 Ubuntu 客机，准备 Docker、Binder/ashmem 和 SSH，停止 Colima 后复制其根磁盘。随后 `vemu` 使用 UTM 的 QEMU 直接启动磁盘副本，提供 VirGL 渲染设备。Colima 负责准备磁盘，不与 vemu 同时运行。
 
 ## 工作原理
 
@@ -20,7 +20,7 @@ Mac adb :5556 → QEMU 端口转发 → 客机 Docker :5555 → Android adbd
 
 Mac 同时运行一个 QEMU 客机和一个活动的 Android 容器。Docker Compose **运行在 Linux 客机内**。启动脚本将真实的 Binderfs 设备节点映射进容器，然后检查 Android 是否开机以及 SurfaceFlinger 的渲染器，确认后才报告成功。
 
-仓库包含用于 Redroid 的 [`compose.yaml`](compose.yaml)，以及安装 APK 时额外使用的 [`compose.apk.yaml`](compose.apk.yaml)。`emulator.sh start` 将这些文件和机型配置复制到客机的 `/opt/vemu/`，然后在客机中运行 `docker compose up -d --force-recreate`。Mac 脚本管理 QEMU，Compose 管理 Android 容器。
+仓库包含用于 Redroid 的 [`compose.yaml`](compose.yaml)，以及安装 APK 时额外使用的 [`compose.apk.yaml`](compose.apk.yaml)。`vemu start` 将这些文件和机型配置复制到客机的 `/opt/vemu/`，然后在客机中运行 `docker compose up -d --force-recreate`。Mac 脚本管理 QEMU，Compose 管理 Android 容器。
 
 准备脚本会先停止 `vemu-seed` Colima profile，再复制磁盘。已停止的种子 profile 会保留，便于排查问题；vemu 使用独立副本，Colima 不会写入 vemu 正在使用的磁盘。
 
@@ -43,7 +43,7 @@ Mac 同时运行一个 QEMU 客机和一个活动的 Android 容器。Docker Com
    ```bash
    git clone https://github.com/johnsonlee/vemu.git
    cd vemu
-   ./.agents/skills/emulator/scripts/emulator.sh start
+   ./.agents/skills/emulator/scripts/vemu start
    ```
 
    首次启动会从 [UTM 4.6.5 官方 GitHub 发布页](https://github.com/utmapp/UTM/releases/tag/v4.6.5)下载 UTM（如果 `/Applications` 中已有该版本则直接使用），创建并配置 Colima 种子客机，复制已停止客机的根磁盘，拉取 Redroid 镜像并启动 Android。这一步可能需要几分钟；以后启动会复用磁盘。
@@ -51,23 +51,24 @@ Mac 同时运行一个 QEMU 客机和一个活动的 Android 容器。Docker Com
 2. 如需显示 Android 画面：
 
    ```bash
-   scrcpy -s 127.0.0.1:5556
+   ./.agents/skills/emulator/scripts/vemu scrcpy
    ```
 
 3. 停止客机，保留 Android 数据：
 
    ```bash
-   ./.agents/skills/emulator/scripts/emulator.sh stop
+   ./.agents/skills/emulator/scripts/vemu stop
    ```
 
-可以先运行 `emulator.sh setup`，只准备运行环境而不启动 Android。启动命令会在首次使用时编译并签名一个小型 QEMU 加载器，在客机中配置 Binderfs、同步 Compose 与设备配置文件、创建所选数据卷，并等待 Android 和 VirGL 就绪。Mac 上的 SSH 监听 `127.0.0.1:2223`，ADB 监听 `127.0.0.1:5556`。
+可以先运行 `vemu setup`，只准备运行环境而不启动 Android。启动命令会在首次使用时编译并签名一个小型 QEMU 加载器，在客机中配置 Binderfs、同步 Compose 与设备配置文件、创建所选数据卷，并等待 Android 和 VirGL 就绪。Mac 上的 SSH 监听 `127.0.0.1:2223`，ADB 监听 `127.0.0.1:5556`。
 
 ## 命令行用法
 
 ```text
-emulator.sh start [--profile PROFILE] [--name NAME] [--apk /path/to/app.apk] [--fps 1-120]
-emulator.sh stop [--name NAME]
-emulator.sh setup
+vemu start [--profile PROFILE] [--name NAME] [--apk /path/to/app.apk] [--fps 1-120]
+vemu stop [--name NAME]
+vemu setup
+vemu scrcpy [--secure]
 ```
 
 | 选项 | 作用 |
@@ -79,15 +80,20 @@ emulator.sh setup
 
 此前的 15 FPS 默认值在一次高频唤醒期间降低了 CPU 占用，但限制动画流畅度。vemu 现在修复固定版本 UTM QEMU 9.1.2 的短定时器等待，因此默认恢复 30 FPS。原版 QEMU 在客机虚拟定时器距触发不足 2 ms 时跳过休眠；vemu 在经过校验的运行时副本中修补该分支，并用 macOS 高精度定时器等待，同时保留 IPI 唤醒。原始 UTM.app 不变。实测数据和限制见[空闲 CPU 分析](docs/idle-cpu.md)。
 
+
 示例：
 
 ```bash
-./.agents/skills/emulator/scripts/emulator.sh start --profile s25-ultra --name s25-test
-./.agents/skills/emulator/scripts/emulator.sh start --apk /absolute/path/app.apk
+./.agents/skills/emulator/scripts/vemu start --profile s25-ultra --name s25-test
+./.agents/skills/emulator/scripts/vemu start --apk /absolute/path/app.apk
 adb devices -l
 ```
 
 由于当前 QEMU 配置没有共享文件系统，APK 首次从 Mac 传入客机仍是必要的；重复使用同一个 APK 时会跳过该次传输。
+
+## SECURE 页面
+
+Android 的 `FLAG_SECURE` 会让普通 scrcpy 中的受保护页面变黑。运行 `vemu scrcpy --secure`，即可使用以 Android `system` 身份运行的定制 scrcpy 4.1 服务端创建安全虚拟显示。实测同一测试 Activity 在普通 scrcpy 中是黑屏，在该命令下可见。该命令会把受保护内容显示到 Mac 上，请只用于你有意显示的应用和数据。它不保证能显示 DRM 保护的视频。服务端源码、补丁、构建方法和 Apache 2.0 许可证见 [assets](.agents/skills/emulator/assets/scrcpy-secure-README.md)。
 
 ## 设备配置
 
