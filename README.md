@@ -77,11 +77,9 @@ emulator.sh view [--secure]
 | `--name` | Sets the Docker container name and Android `ro.product.device`, shown as `device:` by `adb devices -l`. Default: `vemu`. It does **not** change the ADB serial (`127.0.0.1:5556`) or the profile's model. |
 | `--apk` | Installs an APK during `start`. The script copies it from the Mac to the Linux guest once per SHA-256 hash, bind mounts it read-only as `/data/local/tmp/app.apk`, and runs `pm install -r` inside the container. It does not copy the APK through ADB. |
 | `--fps` | Sets Redroid's display refresh cap. Default: 15. Use `--fps 30` for smoother interaction at higher idle CPU cost. |
-| `view --secure` | Uses a patched scrcpy 4.1 server running as Android's `system` user to mirror activities with `FLAG_SECURE`. Requires scrcpy 4.1 on the Mac. |
 
-In one high-wakeup episode on an M3 Max, the 15 FPS cap lowered QEMU host CPU from roughly 100% to 10%. The high usage is intermittent, and 30 FPS can also be quiet; the cap is a mitigation, not a root fix. It limits animation smoothness.
+The 15 FPS default reduced QEMU's idle host CPU from roughly 100% to 10% in a local M3 Max test with Coupang open. It also limits animation smoothness. This is a measured mitigation for frequent Android timer wakeups, not a QEMU fix; other apps and hosts may behave differently.
 
-Android's `FLAG_SECURE` normally makes protected activities black in scrcpy. The optional `view --secure` command uses a secure virtual display on this rooted Redroid image; a test activity with `FLAG_SECURE` was black in stock scrcpy and visible through this command. It mirrors protected content to the Mac, so use it only with apps and data you intend to display. This is separate from DRM protected video. The bundled server's source, patch, build instructions, and Apache 2.0 license are in [assets](.agents/skills/emulator/assets/scrcpy-secure-README.md).
 
 Examples:
 
@@ -92,6 +90,10 @@ adb devices -l
 ```
 
 The first APK transfer from the Mac into the guest is still necessary because this QEMU setup has no shared filesystem. Reusing the same APK skips that transfer.
+
+## Secure activities
+
+Android's `FLAG_SECURE` normally makes protected activities black in scrcpy. Run `emulator.sh view --secure` to use a patched scrcpy 4.1 server as Android's `system` user and create a secure virtual display. A test activity with `FLAG_SECURE` was black in stock scrcpy and visible through this command. It mirrors protected content to the Mac, so use it only with apps and data you intend to display. This is separate from DRM protected video. The bundled server's source, patch, build instructions, and Apache 2.0 license are in [assets](.agents/skills/emulator/assets/scrcpy-secure-README.md).
 
 ## Device profiles
 
