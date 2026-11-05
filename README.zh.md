@@ -97,6 +97,8 @@ adb devices -l
 
 每套配置包含一个 `profile.env` 文件，以及 system、vendor、product、odm、system_ext、vendor_dlkm 六个分区完整且以只读方式映射的 `build.prop` 文件。Android 根据这些分区合成顶层 `ro.product.*` 属性。各配置的数据卷相互独立；`default` 与 `pixel-10-pro` 指向同一配置，因此共用一个数据卷。
 
+生成的属性文件也会为各配置设置指纹和对应的构建 ID。Pixel 10 Pro 的值来自 [Pixel 10 Pro 实机报告](https://github.com/google/filament/issues/9918)，Galaxy S25 Ultra 的值来自 [SM-S938B 实机诊断](https://github.com/appsfolder/livebridge/issues/42)。Android 会在 Java 进程启动时根据系统版本、型号和构建 ID 生成 `http.agent`；它与 WebView 或浏览器 User-Agent 不同（见 [AOSP RuntimeInit](https://android.googlesource.com/platform/frameworks/base/+/b9c98916b11932e7e55849c9c69d116002671a0e/core/java/com/android/internal/os/RuntimeInit.java)）。在已测试镜像中，默认配置返回 `Dalvik/2.1.0 (Linux; U; Android 16; Pixel 10 Pro Build/BD3A.251105.010.E1)`。
+
 修改或新增配置时，更新 [`generate-profiles.py`](.agents/skills/emulator/scripts/generate-profiles.py) 中的 `PROFILES`，提供相应的 `profile.env`，重新生成属性文件并检查差异：
 
 ```bash
@@ -112,6 +114,8 @@ adb devices -l
 adb -s 127.0.0.1:5556 shell getprop sys.boot_completed
 adb -s 127.0.0.1:5556 shell getprop ro.product.model
 adb -s 127.0.0.1:5556 shell getprop ro.product.device
+adb -s 127.0.0.1:5556 shell getprop ro.build.fingerprint
+adb -s 127.0.0.1:5556 shell getprop ro.build.id
 adb -s 127.0.0.1:5556 shell wm size
 adb -s 127.0.0.1:5556 shell wm density
 adb -s 127.0.0.1:5556 shell dumpsys SurfaceFlinger | grep '^GLES:'
@@ -123,7 +127,7 @@ adb -s 127.0.0.1:5556 shell dumpsys SurfaceFlinger | grep '^GLES:'
 
 - 自动准备流程只在一台 M3 Max Mac 上验证过。它依赖 Colima 当前使用的 ARM64 Ubuntu 内核和固定版本的 ashmem DKMS 源码；未来内核可能需要更新模块支持。项目不分发客机镜像。
 - Redroid 容器在专用客机内以 Docker `privileged` 权限运行，并映射 Binder 设备。
-- 配置只改变可见的型号和屏幕属性。构建指纹、WebView 版本和底层硬件仍属于 Redroid。应用可以覆盖自己的 User-Agent；这些配置不会提供真正的 Samsung 或 Google 固件，也不能提供设备完整性证明。参见 [Android WebSettings API](https://developer.android.com/reference/android/webkit/WebSettings)。
+- 配置会改变上报的型号、指纹、Java `http.agent` 和屏幕参数；实际固件、安全补丁内容、WebView 版本及硬件仍属于 Redroid。`--name` 仍覆盖 `ro.product.device`，以设置 ADB 输出中的 `device:` 字段，因此该值会与指纹中的设备代号不同。应用可以覆盖自己的 User-Agent；这些配置不会提供真正的 Samsung 或 Google 固件，也不能提供设备完整性证明。参见 [Android WebSettings API](https://developer.android.com/reference/android/webkit/WebSettings)。
 - GPU 功能目前只在一种 Mac 配置上验证过。其他 Apple Silicon Mac 和客机内核仍需验证。
 
 ## 参与贡献
