@@ -97,6 +97,8 @@ Display pixel counts come from [Google](https://store.google.com/product/pixel_1
 
 Each profile has a `profile.env` file and six complete, read-only mapped `build.prop` files for `system`, `vendor`, `product`, `odm`, `system_ext`, and `vendor_dlkm`. Android derives top-level `ro.product.*` values from these partitions. Profile data volumes are separate; `default` and `pixel-10-pro` share one volume because they are the same profile.
 
+The generated property files also set a reported build fingerprint and matching build ID for each profile. The Pixel 10 Pro values come from a [Pixel 10 Pro device report](https://github.com/google/filament/issues/9918), and the Galaxy S25 Ultra values from an [SM-S938B device diagnostic](https://github.com/appsfolder/livebridge/issues/42). Android generates Java's `http.agent` from the Android version, model, and build ID at process startup; this is distinct from a WebView or browser User-Agent ([AOSP RuntimeInit](https://android.googlesource.com/platform/frameworks/base/+/b9c98916b11932e7e55849c9c69d116002671a0e/core/java/com/android/internal/os/RuntimeInit.java)). On the tested image, the default profile reports `Dalvik/2.1.0 (Linux; U; Android 16; Pixel 10 Pro Build/BD3A.251105.010.E1)`.
+
 To edit or add a profile, update `PROFILES` in [`generate-profiles.py`](.agents/skills/emulator/scripts/generate-profiles.py), provide its `profile.env`, regenerate the property files, and review the diff:
 
 ```bash
@@ -112,6 +114,8 @@ adb devices -l
 adb -s 127.0.0.1:5556 shell getprop sys.boot_completed
 adb -s 127.0.0.1:5556 shell getprop ro.product.model
 adb -s 127.0.0.1:5556 shell getprop ro.product.device
+adb -s 127.0.0.1:5556 shell getprop ro.build.fingerprint
+adb -s 127.0.0.1:5556 shell getprop ro.build.id
 adb -s 127.0.0.1:5556 shell wm size
 adb -s 127.0.0.1:5556 shell wm density
 adb -s 127.0.0.1:5556 shell dumpsys SurfaceFlinger | grep '^GLES:'
@@ -123,7 +127,7 @@ Expect `sys.boot_completed=1`, the selected model and screen settings, and a ren
 
 - The setup path has been tested on one M3 Max Mac. It relies on Colima's current ARM64 Ubuntu kernel and a pinned ashmem DKMS source; a different guest kernel may need updated module support. No guest image is distributed.
 - The Redroid container runs with Docker `privileged` access and mapped Binder devices inside the dedicated guest.
-- Profiles change visible model and display properties. The build fingerprint, WebView version, and underlying hardware remain Redroid. Apps may override their own User-Agent; these profiles do not provide genuine Samsung or Google firmware or device integrity attestation. See the [Android WebSettings API](https://developer.android.com/reference/android/webkit/WebSettings).
+- Profiles change reported identity strings, including the fingerprint and Java `http.agent`, plus display properties. The actual firmware, security patch contents, WebView version, and hardware remain Redroid. `--name` still overrides `ro.product.device` for ADB's `device:` field, even though the reported fingerprint contains the profile's device codename. Apps may override their own User-Agent; these profiles cannot provide genuine Samsung or Google firmware or device integrity attestation. See the [Android WebSettings API](https://developer.android.com/reference/android/webkit/WebSettings).
 - GPU functionality has been checked on one Mac configuration. Other Apple Silicon Macs and guest kernels need verification.
 
 ## Contributing

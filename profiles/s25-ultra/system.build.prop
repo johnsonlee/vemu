@@ -6,17 +6,17 @@ ro.product.system.brand=samsung
 ro.product.system.device=pa3q
 ro.product.system.manufacturer=samsung
 ro.product.system.model=SM-S938B
-ro.product.system.name=pa3q
+ro.product.system.name=pa3qxxx
 ro.system.product.cpu.abilist=arm64-v8a
 ro.system.product.cpu.abilist32=
 ro.system.product.cpu.abilist64=arm64-v8a
 ro.system.build.date=Thu Jun 26 22:48:39 CST 2025
 ro.system.build.date.utc=1750949319
-ro.system.build.fingerprint=redroid/redroid_arm64_only/redroid_arm64_only:16/BP2A.250605.031.A3/eng.root:userdebug/test-keys
+ro.system.build.fingerprint=samsung/pa3qxxx/pa3q:16/BP2A.250605.031.A3/S938BXXS9BZCH_OXM9BZCH:user/release-keys
 ro.system.build.id=BP2A.250605.031.A3
-ro.system.build.tags=test-keys
-ro.system.build.type=userdebug
-ro.system.build.version.incremental=eng.root
+ro.system.build.tags=release-keys
+ro.system.build.type=user
+ro.system.build.version.incremental=S938BXXS9BZCH_OXM9BZCH
 ro.system.build.version.release=16
 ro.system.build.version.release_or_codename=16
 ro.system.build.version.sdk=36
@@ -26,8 +26,8 @@ ro.system.build.version.sdk_full=36.0
 ####################################
 # begin build properties
 ro.build.id=BP2A.250605.031.A3
-ro.build.display.id=redroid_arm64_only-userdebug 16 BP2A.250605.031.A3 eng.root test-keys
-ro.build.version.incremental=eng.root
+ro.build.display.id=BP2A.250605.031.A3.S938BXXS9BZCH
+ro.build.version.incremental=S938BXXS9BZCH_OXM9BZCH
 ro.build.version.sdk=36
 ro.build.version.sdk_full=36.0
 ro.build.version.preview_sdk=0
@@ -43,20 +43,20 @@ ro.build.version.base_os=
 ro.build.version.min_supported_target_sdk=28
 ro.build.date=Thu Jun 26 22:48:39 CST 2025
 ro.build.date.utc=1750949319
-ro.build.type=userdebug
+ro.build.type=user
 ro.build.user=root
 ro.build.host=d
-ro.build.tags=test-keys
-ro.build.flavor=redroid_arm64_only-userdebug
+ro.build.tags=release-keys
+ro.build.flavor=pa3qxxx-user
 # ro.product.cpu.abi and ro.product.cpu.abi2 are obsolete,
 # use ro.product.cpu.abilist instead.
 ro.product.cpu.abi=arm64-v8a
 ro.product.locale=en-US
 ro.wifi.channels=
 # ro.build.product is obsolete; use ro.product.device
-ro.build.product=redroid_arm64_only
+ro.build.product=pa3q
 # Do not try to parse description or thumbprint
-ro.build.description=redroid_arm64_only-userdebug 16 BP2A.250605.031.A3 eng.root test-keys
+ro.build.description=pa3qxxx-user 16 BP2A.250605.031.A3 S938BXXS9BZCH_OXM9BZCH release-keys
 # end build properties
 ####################################
 # from variable ADDITIONAL_SYSTEM_PROPERTIES
@@ -132,3 +132,4 @@ persist.sys.usb.config=adb
 # https://issuetracker.google.com/issues/385124056 with alias 4
 ro.build.backported_fixes.alias_bitset.long_list=18
 # end of file
+ro.build.fingerprint=samsung/pa3qxxx/pa3q:16/BP2A.250605.031.A3/S938BXXS9BZCH_OXM9BZCH:user/release-keys
