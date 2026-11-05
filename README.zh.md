@@ -51,7 +51,7 @@ Mac 同时运行一个 QEMU 客机和一个活动的 Android 容器。Docker Com
 2. 如需显示 Android 画面：
 
    ```bash
-   scrcpy -s 127.0.0.1:5556
+   ./.agents/skills/emulator/scripts/emulator.sh view
    ```
 
 3. 停止客机，保留 Android 数据：
@@ -68,6 +68,7 @@ Mac 同时运行一个 QEMU 客机和一个活动的 Android 容器。Docker Com
 emulator.sh start [--profile PROFILE] [--name NAME] [--apk /path/to/app.apk] [--fps 1-120]
 emulator.sh stop [--name NAME]
 emulator.sh setup
+emulator.sh view [--secure]
 ```
 
 | 选项 | 作用 |
@@ -76,8 +77,11 @@ emulator.sh setup
 | `--name` | 设置 Docker 容器名和 Android 的 `ro.product.device`，后者显示为 `adb devices -l` 输出中的 `device:`。默认值为 `vemu`。它**不会**改变 ADB serial（`127.0.0.1:5556`）或配置中的设备型号。 |
 | `--apk` | 在 `start` 期间安装 APK。脚本按 SHA-256 哈希将 APK 从 Mac 向 Linux 客机复制一次，然后以只读方式映射为容器内的 `/data/local/tmp/app.apk`，在容器内运行 `pm install -r`。APK 不通过 ADB 复制。 |
 | `--fps` | 设置 Redroid 的画面刷新率上限。默认 15；需要更流畅的交互时可用 `--fps 30`，但空闲 CPU 占用可能更高。 |
+| `view --secure` | 使用以 Android `system` 身份运行的定制 scrcpy 4.1 服务端，显示带 `FLAG_SECURE` 的 Activity。Mac 端需要 scrcpy 4.1。 |
 
-在本地 M3 Max、Coupang 前台静置的测试中，默认 15 FPS 将 QEMU 的 Mac CPU 占用从约 100% 降至约 10%，同时会限制动画流畅度。这是减少 Android 定时唤醒的实测缓解方案，不是 QEMU 本身的修复；其他应用和主机可能不同。
+在本地 M3 Max 的一次高频唤醒期间，15 FPS 将 QEMU 的 Mac CPU 占用从约 100% 降至约 10%。高占用是间歇性的，30 FPS 有时也很安静；帧率上限只是缓解措施，并非根本修复，而且会限制动画流畅度。
+
+Android 的 `FLAG_SECURE` 会让普通 scrcpy 中的受保护页面变黑。可选的 `view --secure` 命令利用这套已取得 root 权限的 Redroid 镜像创建安全虚拟显示；实测同一测试 Activity 在普通 scrcpy 中是黑屏，在该命令下可见。该命令会把受保护内容显示到 Mac 上，请只用于你有意显示的应用和数据。它不保证能显示 DRM 保护的视频。服务端源码、补丁、构建方法和 Apache 2.0 许可证见 [assets](.agents/skills/emulator/assets/scrcpy-secure-README.md)。
 
 示例：
 

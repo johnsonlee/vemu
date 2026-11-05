@@ -6,11 +6,11 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 skill_dir="$(dirname "$script_dir")"
 cd "$script_dir/../../../.."
 if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
-    printf 'Usage: %s start|stop|setup [--profile PROFILE] [--name NAME] [--apk PATH] [--fps 1-120]\n' "$0"
+    printf 'Usage: %s start|stop|setup|view [--profile PROFILE] [--name NAME] [--apk PATH] [--fps 1-120] [--secure]\n' "$0"
     exit 0
 fi
 if (($# == 0)); then
-    printf 'Usage: %s start|stop|setup [--profile PROFILE] [--name NAME] [--apk PATH] [--fps 1-120]\n' "$0" >&2
+    printf 'Usage: %s start|stop|setup|view [--profile PROFILE] [--name NAME] [--apk PATH] [--fps 1-120] [--secure]\n' "$0" >&2
     exit 2
 fi
 action="$1"
@@ -20,6 +20,7 @@ name=
 apk=
 fps=15
 fps_set=0
+secure=0
 gpu_dir="${VEMU_HOME:-$HOME/.local/share/vemu}"
 guest_user="${VEMU_GUEST_USER:-$USER}"
 while (($#)); do
@@ -34,13 +35,26 @@ while (($#)); do
                 --fps) fps="$2"; fps_set=1 ;;
             esac
             shift 2 ;;
+        --secure)
+            secure=1
+            shift ;;
         --help|-h)
-            printf 'Usage: %s start|stop|setup [--profile PROFILE] [--name NAME] [--apk PATH] [--fps 1-120]\n' "$0"
+            printf 'Usage: %s start|stop|setup|view [--profile PROFILE] [--name NAME] [--apk PATH] [--fps 1-120] [--secure]\n' "$0"
             exit 0 ;;
         *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
     esac
 done
-[[ "$action" == start || "$action" == stop || "$action" == setup ]] || { printf 'Invalid action: %s\n' "$action" >&2; exit 2; }
+[[ "$action" == start || "$action" == stop || "$action" == setup || "$action" == view ]] || { printf 'Invalid action: %s\n' "$action" >&2; exit 2; }
+if [[ "$action" == view ]]; then
+    [[ -z "$apk" && -z "$name" && "$profile" == default && "$fps_set" == 0 ]] || {
+        printf 'view only accepts --secure\n' >&2; exit 2;
+    }
+    if [[ "$secure" == 1 ]]; then
+        exec "$script_dir/secure-view.sh"
+    fi
+    exec scrcpy -s 127.0.0.1:5556
+fi
+[[ "$secure" == 0 ]] || { printf '%s\n' '--secure only applies to view' >&2; exit 2; }
 if [[ "$action" == setup ]]; then
     [[ -z "$apk" && -z "$name" && "$profile" == default && "$fps_set" == 0 ]] || {
         printf 'setup does not accept profile, name, APK, or FPS options\n' >&2; exit 2;
@@ -226,4 +240,5 @@ test "$(adb -s 127.0.0.1:5556 shell getprop ro.product.device | tr -d '\r')" = "
     exit 1
 }
 printf '%s\n' "$name" > "$gpu_dir/active-name"
-printf 'Name: %s\nProfile: %s\n%s\nOpen Android: scrcpy -s 127.0.0.1:5556\n' "$name" "$profile" "$renderer"
+printf 'Name: %s\nProfile: %s\n%s\nOpen Android: %s view\nSecure pages: %s view --secure\n' \
+    "$name" "$profile" "$renderer" "$0" "$0"
