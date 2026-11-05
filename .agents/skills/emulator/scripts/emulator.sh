@@ -18,7 +18,7 @@ shift
 profile=default
 name=
 apk=
-fps=15
+fps=30
 fps_set=0
 secure=0
 gpu_dir="${VEMU_HOME:-$HOME/.local/share/vemu}"
@@ -115,14 +115,22 @@ if [[ ! -x "$loader" || "$skill_dir/src/qemu-loader.c" -nt "$loader" || "$skill_
     codesign --force --sign - --entitlements "$skill_dir/assets/gpu-entitlements.plist" "$loader" >/dev/null
 fi
 
+"$script_dir/prepare-idle-qemu.sh"
+idle_qemu="$gpu_dir/hvf-idle/qemu-aarch64-softmmu"
+idle_interposer="$gpu_dir/hvf-idle/critical-pselect.dylib"
+if [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null &&
+   ! ps -p "$(cat "$pidfile")" -o command= | grep -Fq "$idle_qemu"; then
+    "$script_dir/stop-gpu.sh"
+fi
+
 if [[ ! -f "$pidfile" ]] || ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
     rm -f "$gpu_dir/monitor.sock" "$gpu_dir/spice.sock"
-    python3 - "$plist" "$loader" "$qemu_lib" "$qemu_resources" "$disk" "$gpu_dir" "$label" "$guest_mac" <<'PY'
+    python3 - "$plist" "$loader" "$idle_qemu" "$idle_interposer" "$qemu_resources" "$disk" "$gpu_dir" "$label" "$guest_mac" <<'PY'
 import plistlib
 import sys
 from pathlib import Path
 
-plist, loader, library, resources, disk, directory, label, guest_mac = sys.argv[1:]
+plist, loader, library, interposer, resources, disk, directory, label, guest_mac = sys.argv[1:]
 arguments = [
     loader, library, "-L", resources, "-machine", "virt", "-accel", "hvf",
     "-cpu", "host", "-smp", "4", "-m", "6144", "-bios",
@@ -138,6 +146,7 @@ arguments = [
 job = {
     "Label": label,
     "ProgramArguments": arguments,
+    "EnvironmentVariables": {"DYLD_INSERT_LIBRARIES": interposer},
     "RunAtLoad": True,
     "KeepAlive": False,
     "StandardOutPath": f"{directory}/qemu.log",

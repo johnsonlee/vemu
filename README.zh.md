@@ -5,7 +5,7 @@
 vemu 在 Apple Silicon Mac 上运行使用 GPU 渲染的 Android 16。它通过 UTM 的 QEMU 启动 ARM64 Linux 客机，在客机中通过 Docker Compose 运行 [Redroid](https://github.com/remote-android/redroid-doc)，再经 VirGL 和 ANGLE 将 Android 的 OpenGL 绘制交给 Mac GPU。设备配置可切换 Android 系统属性和屏幕参数。
 
 > [!IMPORTANT]
-> **实验性项目。** 首次启动会自动下载 UTM 并创建专用的 Linux 客机磁盘。完整的全新安装流程只在一台 M3 Max Mac 上验证过；其他 Apple Silicon Mac 和未来的客机内核仍需测试。尚无性能基准测试结论。
+> **实验性项目。** 首次启动会自动下载 UTM 并创建专用的 Linux 客机磁盘。完整的全新安装流程只在一台 M3 Max Mac 上验证过；其他 Apple Silicon Mac 和未来的客机内核仍需测试。下文的空闲 CPU 数据是本地诊断结果，不代表一般性能基准。
 
 首次启动时，vemu 会创建专用的 [Colima](https://github.com/abiosoft/colima)/Lima ARM64 Ubuntu 客机，准备 Docker、Binder/ashmem 和 SSH，停止 Colima 后复制其根磁盘。随后 `emulator.sh` 使用 UTM 的 QEMU 直接启动磁盘副本，提供 VirGL 渲染设备。Colima 负责准备磁盘，不与 vemu 同时运行。
 
@@ -76,9 +76,9 @@ emulator.sh view [--secure]
 | `--profile` | 选择 `default`、`pixel-10-pro` 或 `s25-ultra`。`default` 是指向 `pixel-10-pro` 的符号链接。 |
 | `--name` | 设置 Docker 容器名和 Android 的 `ro.product.device`，后者显示为 `adb devices -l` 输出中的 `device:`。默认值为 `vemu`。它**不会**改变 ADB serial（`127.0.0.1:5556`）或配置中的设备型号。 |
 | `--apk` | 在 `start` 期间安装 APK。脚本按 SHA-256 哈希将 APK 从 Mac 向 Linux 客机复制一次，然后以只读方式映射为容器内的 `/data/local/tmp/app.apk`，在容器内运行 `pm install -r`。APK 不通过 ADB 复制。 |
-| `--fps` | 设置 Redroid 的画面刷新率上限。默认 15；需要更流畅的交互时可用 `--fps 30`，但空闲 CPU 占用可能更高。 |
+| `--fps` | 设置 Redroid 的画面刷新率上限。默认 30；如果希望进一步降低刷新率，可用 `--fps 15`。 |
 
-在本地 M3 Max、Coupang 前台静置的测试中，默认 15 FPS 将 QEMU 的 Mac CPU 占用从约 100% 降至约 10%，同时会限制动画流畅度。这是减少 Android 定时唤醒的实测缓解方案，不是 QEMU 本身的修复；其他应用和主机可能不同。
+此前的 15 FPS 默认值在一次高频唤醒期间降低了 CPU 占用，但限制动画流畅度。vemu 现在修复固定版本 UTM QEMU 9.1.2 的短定时器等待，因此默认恢复 30 FPS。原版 QEMU 在客机虚拟定时器距触发不足 2 ms 时跳过休眠；vemu 在经过校验的运行时副本中修补该分支，并用 macOS 高精度定时器等待，同时保留 IPI 唤醒。原始 UTM.app 不变。实测数据和限制见[空闲 CPU 分析](docs/idle-cpu.md)。
 
 
 示例：
