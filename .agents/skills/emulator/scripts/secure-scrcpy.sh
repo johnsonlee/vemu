@@ -7,7 +7,7 @@ command -v scrcpy >/dev/null || { printf 'scrcpy is required: brew install scrcp
 command -v adb >/dev/null || { printf 'adb is required: brew install android-platform-tools\n' >&2; exit 1; }
 [[ -f "$server" ]] || { printf 'Missing secure scrcpy server: %s\n' "$server" >&2; exit 1; }
 if [[ "$(scrcpy --version | head -1)" != scrcpy\ 4.1\ * ]]; then
-    printf 'Secure view requires scrcpy 4.1 to match the bundled server\n' >&2
+    printf 'Secure scrcpy requires scrcpy 4.1 to match the bundled server\n' >&2
     exit 1
 fi
 

@@ -15,4 +15,4 @@ ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew :server:assembleRelease
 cp server/build/outputs/apk/release/server-release-unsigned.apk /absolute/path/to/vemu/.agents/skills/emulator/assets/scrcpy-secure-server-4.1.apk
 ```
 
-The server is invoked only by `emulator.sh view --secure`. It does not change the Android image or the installed app. The secure display intentionally mirrors content that an app would normally exclude from screen capture.
+The server is invoked only by `vemu scrcpy --secure`. It does not change the Android image or the installed app. The secure display intentionally mirrors content that an app would normally exclude from screen capture.
