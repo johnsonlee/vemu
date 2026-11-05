@@ -25,6 +25,7 @@ services:
       - androidboot.use_memfd=1
       - androidboot.redroid_gpu_mode=host
       - androidboot.redroid_gpu_node=/dev/dri/renderD128
+      - androidboot.redroid_fps=${REDROID_FPS:-15}
       - androidboot.redroid_width=${SCREEN_WIDTH}
       - androidboot.redroid_height=${SCREEN_HEIGHT}
       - androidboot.redroid_dpi=${SCREEN_DPI}

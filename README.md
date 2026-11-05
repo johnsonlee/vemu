@@ -65,7 +65,7 @@ Run `emulator.sh setup` to prepare the runtime without starting Android. The sta
 ## CLI
 
 ```text
-emulator.sh start [--profile PROFILE] [--name NAME] [--apk /path/to/app.apk]
+emulator.sh start [--profile PROFILE] [--name NAME] [--apk /path/to/app.apk] [--fps 1-120]
 emulator.sh stop [--name NAME]
 emulator.sh setup
 ```
@@ -75,6 +75,9 @@ emulator.sh setup
 | `--profile` | Selects `default`, `pixel-10-pro`, or `s25-ultra`. `default` is a symlink to `pixel-10-pro`. |
 | `--name` | Sets the Docker container name and Android `ro.product.device`, shown as `device:` by `adb devices -l`. Default: `vemu`. It does **not** change the ADB serial (`127.0.0.1:5556`) or the profile's model. |
 | `--apk` | Installs an APK during `start`. The script copies it from the Mac to the Linux guest once per SHA-256 hash, bind mounts it read-only as `/data/local/tmp/app.apk`, and runs `pm install -r` inside the container. It does not copy the APK through ADB. |
+| `--fps` | Sets Redroid's display refresh cap. Default: 15. Use `--fps 30` for smoother interaction at higher idle CPU cost. |
+
+The 15 FPS default reduced QEMU's idle host CPU from roughly 100% to 10% in a local M3 Max test with Coupang open. It also limits animation smoothness. This is a measured mitigation for frequent Android timer wakeups, not a QEMU fix; other apps and hosts may behave differently.
 
 Examples:
 
