@@ -5,7 +5,7 @@
 vemu runs Android 16 on Apple Silicon macOS with GPU-backed rendering. It starts an ARM64 Linux guest with UTM's QEMU, runs [Redroid](https://github.com/remote-android/redroid-doc) through Docker Compose, and sends Android OpenGL work through VirGL and ANGLE to the Mac GPU. Device profiles select Android properties and display settings.
 
 > [!IMPORTANT]
-> **Experimental setup.** First start downloads UTM and creates a dedicated Linux guest disk. The complete fresh setup has been verified on one M3 Max Mac; other Apple Silicon Macs and future guest kernels need testing. No performance benchmark is claimed.
+> **Experimental setup.** First start downloads UTM and creates a dedicated Linux guest disk. The complete fresh setup has been verified on one M3 Max Mac; other Apple Silicon Macs and future guest kernels need testing. The idle CPU measurements below are local diagnostics, not a general performance benchmark.
 
 On first start, vemu creates a dedicated [Colima](https://github.com/abiosoft/colima)/Lima ARM64 Ubuntu guest, prepares Docker, Binder/ashmem, and SSH, stops Colima, and copies its root disk. `emulator.sh` then boots that copy directly with UTM's QEMU to expose the VirGL render device. Colima prepares the disk; it does not run alongside vemu.
 
@@ -75,9 +75,9 @@ emulator.sh setup
 | `--profile` | Selects `default`, `pixel-10-pro`, or `s25-ultra`. `default` is a symlink to `pixel-10-pro`. |
 | `--name` | Sets the Docker container name and Android `ro.product.device`, shown as `device:` by `adb devices -l`. Default: `vemu`. It does **not** change the ADB serial (`127.0.0.1:5556`) or the profile's model. |
 | `--apk` | Installs an APK during `start`. The script copies it from the Mac to the Linux guest once per SHA-256 hash, bind mounts it read-only as `/data/local/tmp/app.apk`, and runs `pm install -r` inside the container. It does not copy the APK through ADB. |
-| `--fps` | Sets Redroid's display refresh cap. Default: 15. Use `--fps 30` for smoother interaction at higher idle CPU cost. |
+| `--fps` | Sets Redroid's display refresh cap. Default: 30. Use `--fps 15` if you prefer a lower refresh rate. |
 
-The 15 FPS default reduced QEMU's idle host CPU from roughly 100% to 10% in a local M3 Max test with Coupang open. It also limits animation smoothness. This is a measured mitigation for frequent Android timer wakeups, not a QEMU fix; other apps and hosts may behave differently.
+The earlier 15 FPS default reduced host CPU in one high-wakeup episode but limited animation smoothness. vemu now fixes the short-timer wait in its pinned UTM QEMU 9.1.2 build, so the default is back to 30 FPS. The original QEMU skips sleeping when a guest virtual timer is due within 2 ms. vemu patches that branch in a verified runtime copy and uses a high-precision macOS timer while preserving IPI wakeups. The original UTM app stays untouched. See [idle CPU analysis](docs/idle-cpu.md) for measurements and limitations.
 
 Examples:
 
