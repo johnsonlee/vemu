@@ -6,11 +6,11 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 skill_dir="$(dirname "$script_dir")"
 cd "$script_dir/../../../.."
 if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
-    printf 'Usage: %s start|stop|setup [--profile PROFILE] [--name NAME] [--apk PATH]\n' "$0"
+    printf 'Usage: %s start|stop|setup [--profile PROFILE] [--name NAME] [--apk PATH] [--fps 1-120]\n' "$0"
     exit 0
 fi
 if (($# == 0)); then
-    printf 'Usage: %s start|stop|setup [--profile PROFILE] [--name NAME] [--apk PATH]\n' "$0" >&2
+    printf 'Usage: %s start|stop|setup [--profile PROFILE] [--name NAME] [--apk PATH] [--fps 1-120]\n' "$0" >&2
     exit 2
 fi
 action="$1"
@@ -18,40 +18,48 @@ shift
 profile=default
 name=
 apk=
+fps=15
+fps_set=0
 gpu_dir="${VEMU_HOME:-$HOME/.local/share/vemu}"
 guest_user="${VEMU_GUEST_USER:-$USER}"
 while (($#)); do
     case "$1" in
-        --profile|-p|--name|--apk)
+        --profile|-p|--name|--apk|--fps)
             option="$1"
             (($# >= 2)) || { printf 'Missing value for %s\n' "$option" >&2; exit 2; }
             case "$option" in
                 --profile|-p) profile="$2" ;;
                 --name) name="$2" ;;
                 --apk) apk="$2" ;;
+                --fps) fps="$2"; fps_set=1 ;;
             esac
             shift 2 ;;
         --help|-h)
-            printf 'Usage: %s start|stop|setup [--profile PROFILE] [--name NAME] [--apk PATH]\n' "$0"
+            printf 'Usage: %s start|stop|setup [--profile PROFILE] [--name NAME] [--apk PATH] [--fps 1-120]\n' "$0"
             exit 0 ;;
         *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
     esac
 done
 [[ "$action" == start || "$action" == stop || "$action" == setup ]] || { printf 'Invalid action: %s\n' "$action" >&2; exit 2; }
 if [[ "$action" == setup ]]; then
-    [[ -z "$apk" && -z "$name" && "$profile" == default ]] || {
-        printf 'setup does not accept profile, name, or APK options\n' >&2; exit 2;
+    [[ -z "$apk" && -z "$name" && "$profile" == default && "$fps_set" == 0 ]] || {
+        printf 'setup does not accept profile, name, APK, or FPS options\n' >&2; exit 2;
     }
     exec "$script_dir/setup.sh"
 fi
 if [[ "$action" == stop ]]; then
     [[ -z "$apk" ]] || { printf '%s\n' '--apk only applies to start' >&2; exit 2; }
+    [[ "$fps_set" == 0 ]] || { printf '%s\n' '--fps only applies to start' >&2; exit 2; }
     if [[ -z "$name" ]]; then
         exec "$script_dir/stop-gpu.sh"
     fi
     exec "$script_dir/stop-gpu.sh" --name "$name"
 fi
 name="${name:-vemu}"
+if [[ ! "$fps" =~ ^[0-9]+$ ]] || ((10#$fps < 1 || 10#$fps > 120)); then
+    printf 'Invalid FPS: %s (expected 1-120)\n' "$fps" >&2; exit 2;
+fi
+fps="$((10#$fps))"
 [[ "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || { printf 'Invalid name: %s\n' "$name" >&2; exit 2; }
 [[ -z "$apk" || -f "$apk" ]] || { printf 'APK not found: %s\n' "$apk" >&2; exit 2; }
 [[ "$profile" =~ ^[a-z0-9-]+$ && -f "profiles/$profile/profile.env" ]] || {
@@ -180,7 +188,7 @@ if docker container inspect "$name" >/dev/null 2>&1; then
 fi
 GUEST
 ssh "${ssh_args[@]}" "$guest_host" \
-    "cd /opt/vemu && sudo env INSTANCE_NAME='$name' APK_GUEST_PATH='$apk_guest_path' docker compose --env-file profiles/$profile/profile.env $compose_files up -d --force-recreate"
+    "cd /opt/vemu && sudo env INSTANCE_NAME='$name' APK_GUEST_PATH='$apk_guest_path' REDROID_FPS='$fps' docker compose --env-file profiles/$profile/profile.env $compose_files up -d --force-recreate"
 
 booted=0
 for _ in {1..90}; do
