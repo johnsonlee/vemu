@@ -1,0 +1,9 @@
+services:
+  android:
+    volumes:
+      - type: bind
+        source: ${APK_GUEST_PATH}
+        target: /data/local/tmp/app.apk
+        read_only: true
+        bind:
+          create_host_path: false
