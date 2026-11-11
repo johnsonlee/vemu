@@ -3,7 +3,6 @@
 # shellcheck disable=SC2029
 set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
-skill_dir="$(dirname "$script_dir")"
 cd "$script_dir/../../../.."
 if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
     printf 'Usage: %s start|stop|setup|scrcpy [--profile PROFILE] [--name NAME] [--apk PATH] [--fps 1-120] [--secure]\n' "$0"
@@ -80,7 +79,8 @@ fps="$((10#$fps))"
     printf 'Unknown profile: %s\n' "$profile" >&2
     exit 1
 }
-if [[ ! -f "$gpu_dir/disk.raw" || ! -f "$gpu_dir/ssh_key" || ! -f "$gpu_dir/UTM.app/Contents/Frameworks/qemu-aarch64-softmmu.framework/Versions/A/qemu-aarch64-softmmu" ]]; then
+if [[ ! -f "$gpu_dir/disk.raw" || ! -f "$gpu_dir/ssh_key" || ! -x "$gpu_dir/qemu-system-aarch64" ||
+      "$gpu_dir/macports/bin/qemu-system-aarch64" -nt "$gpu_dir/qemu-system-aarch64" ]]; then
     "$script_dir/setup.sh"
 fi
 data_volume="$(sed -n 's/^ANDROID_DATA_VOLUME=//p' "profiles/$profile/profile.env")"
@@ -90,12 +90,10 @@ data_volume="$(sed -n 's/^ANDROID_DATA_VOLUME=//p' "profiles/$profile/profile.en
 }
 
 guest_host="$guest_user@127.0.0.1"
-utm_app="$gpu_dir/UTM.app"
-qemu_lib="$utm_app/Contents/Frameworks/qemu-aarch64-softmmu.framework/Versions/A/qemu-aarch64-softmmu"
-qemu_resources="$utm_app/Contents/Resources/qemu"
+qemu_bin="$gpu_dir/qemu-system-aarch64"
+qemu_resources="$gpu_dir/macports/share/qemu"
 disk="$gpu_dir/disk.raw"
 ssh_key="$gpu_dir/ssh_key"
-loader="$gpu_dir/qemu-loader"
 pidfile="$gpu_dir/qemu.pid"
 plist="$gpu_dir/qemu.launchd.plist"
 label=io.johnsonlee.vemu
@@ -106,33 +104,25 @@ if [[ -f "$gpu_dir/guest-mac" ]]; then guest_mac="$(cat "$gpu_dir/guest-mac")"; 
     printf 'Invalid guest MAC: %s\n' "$guest_mac" >&2; exit 1;
 }
 
-for required in "$qemu_lib" "$qemu_resources/edk2-aarch64-code.fd" "$disk" "$ssh_key"; do
+for required in "$qemu_bin" "$qemu_resources/edk2-aarch64-code.fd" "$disk" "$ssh_key"; do
     test -e "$required" || { printf 'Missing %s\n' "$required" >&2; exit 1; }
 done
 
-if [[ ! -x "$loader" || "$skill_dir/src/qemu-loader.c" -nt "$loader" || "$skill_dir/assets/gpu-entitlements.plist" -nt "$loader" ]]; then
-    clang -Wl,-rpath,"$utm_app/Contents/Frameworks" -o "$loader" "$skill_dir/src/qemu-loader.c"
-    codesign --force --sign - --entitlements "$skill_dir/assets/gpu-entitlements.plist" "$loader" >/dev/null
-fi
-
-"$script_dir/prepare-idle-qemu.sh"
-idle_qemu="$gpu_dir/hvf-idle/qemu-aarch64-softmmu"
-idle_interposer="$gpu_dir/hvf-idle/critical-pselect.dylib"
 if [[ -f "$pidfile" ]] && kill -0 "$(cat "$pidfile")" 2>/dev/null &&
-   ! ps -p "$(cat "$pidfile")" -o command= | grep -Fq "$idle_qemu"; then
+   ! ps -p "$(cat "$pidfile")" -o command= | grep -Fq "$qemu_bin"; then
     "$script_dir/stop-gpu.sh"
 fi
 
 if [[ ! -f "$pidfile" ]] || ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
     rm -f "$gpu_dir/monitor.sock" "$gpu_dir/spice.sock"
-    python3 - "$plist" "$loader" "$idle_qemu" "$idle_interposer" "$qemu_resources" "$disk" "$gpu_dir" "$label" "$guest_mac" <<'PY'
+    python3 - "$plist" "$qemu_bin" "$qemu_resources" "$disk" "$gpu_dir" "$label" "$guest_mac" <<'PY'
 import plistlib
 import sys
 from pathlib import Path
 
-plist, loader, library, interposer, resources, disk, directory, label, guest_mac = sys.argv[1:]
+plist, qemu, resources, disk, directory, label, guest_mac = sys.argv[1:]
 arguments = [
-    loader, library, "-L", resources, "-machine", "virt", "-accel", "hvf",
+    qemu, "-L", resources, "-machine", "virt", "-accel", "hvf",
     "-cpu", "host", "-smp", "4", "-m", "6144", "-bios",
     f"{resources}/edk2-aarch64-code.fd", "-drive",
     f"if=none,file={disk},format=raw,id=hd0", "-device", "virtio-blk-pci,drive=hd0",
@@ -146,7 +136,6 @@ arguments = [
 job = {
     "Label": label,
     "ProgramArguments": arguments,
-    "EnvironmentVariables": {"DYLD_INSERT_LIBRARIES": interposer},
     "RunAtLoad": True,
     "KeepAlive": False,
     "StandardOutPath": f"{directory}/qemu.log",
