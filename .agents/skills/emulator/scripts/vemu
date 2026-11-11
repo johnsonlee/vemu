@@ -79,7 +79,8 @@ fps="$((10#$fps))"
     printf 'Unknown profile: %s\n' "$profile" >&2
     exit 1
 }
-if [[ ! -f "$gpu_dir/disk.raw" || ! -f "$gpu_dir/ssh_key" || ! -x "$gpu_dir/qemu-system-aarch64" ||
+if [[ ! -f "$gpu_dir/disk.raw" || ! -f "$gpu_dir/datadisk.qcow2" || ! -f "$gpu_dir/cidata.iso" ||
+      ! -f "$gpu_dir/ssh_key" || ! -x "$gpu_dir/qemu-system-aarch64" ||
       "$gpu_dir/macports/bin/qemu-system-aarch64" -nt "$gpu_dir/qemu-system-aarch64" ]]; then
     "$script_dir/setup.sh"
 fi
@@ -93,6 +94,8 @@ guest_host="$guest_user@127.0.0.1"
 qemu_bin="$gpu_dir/qemu-system-aarch64"
 qemu_resources="$gpu_dir/macports/share/qemu"
 disk="$gpu_dir/disk.raw"
+datadisk="$gpu_dir/datadisk.qcow2"
+cidata="$gpu_dir/cidata.iso"
 ssh_key="$gpu_dir/ssh_key"
 pidfile="$gpu_dir/qemu.pid"
 plist="$gpu_dir/qemu.launchd.plist"
@@ -104,7 +107,7 @@ if [[ -f "$gpu_dir/guest-mac" ]]; then guest_mac="$(cat "$gpu_dir/guest-mac")"; 
     printf 'Invalid guest MAC: %s\n' "$guest_mac" >&2; exit 1;
 }
 
-for required in "$qemu_bin" "$qemu_resources/edk2-aarch64-code.fd" "$disk" "$ssh_key"; do
+for required in "$qemu_bin" "$qemu_resources/edk2-aarch64-code.fd" "$disk" "$datadisk" "$cidata" "$ssh_key"; do
     test -e "$required" || { printf 'Missing %s\n' "$required" >&2; exit 1; }
 done
 
@@ -115,21 +118,26 @@ fi
 
 if [[ ! -f "$pidfile" ]] || ! kill -0 "$(cat "$pidfile")" 2>/dev/null; then
     rm -f "$gpu_dir/monitor.sock" "$gpu_dir/spice.sock"
-    python3 - "$plist" "$qemu_bin" "$qemu_resources" "$disk" "$gpu_dir" "$label" "$guest_mac" <<'PY'
+    python3 - "$plist" "$qemu_bin" "$qemu_resources" "$disk" "$datadisk" "$cidata" "$gpu_dir" "$label" "$guest_mac" <<'PY'
 import plistlib
 import sys
 from pathlib import Path
 
-plist, qemu, resources, disk, directory, label, guest_mac = sys.argv[1:]
+plist, qemu, resources, disk, datadisk, cidata, directory, label, guest_mac = sys.argv[1:]
 arguments = [
     qemu, "-L", resources, "-machine", "virt", "-accel", "hvf",
-    "-cpu", "host", "-smp", "4", "-m", "6144", "-bios",
-    f"{resources}/edk2-aarch64-code.fd", "-drive",
-    f"if=none,file={disk},format=raw,id=hd0", "-device", "virtio-blk-pci,drive=hd0",
+    "-cpu", "host", "-smp", "4", "-m", "6144", "-drive",
+    f"if=pflash,format=raw,readonly=on,file={resources}/edk2-aarch64-code.fd",
+    "-drive", f"if=none,file={disk},format=raw,id=hd0", "-device",
+    "virtio-blk-pci,drive=hd0,bootindex=1", "-boot", "order=c,splash-time=0,menu=on",
+    "-drive", f"if=none,file={datadisk},format=qcow2,id=hd1", "-device",
+    "virtio-blk-pci,drive=hd1", "-drive",
+    f"if=none,file={cidata},format=raw,readonly=on,id=cdrom0", "-device",
+    "virtio-scsi,id=scsi0", "-device", "scsi-cd,bus=scsi0.0,drive=cdrom0",
     "-netdev", "user,id=net0,hostfwd=tcp:127.0.0.1:2223-:22,hostfwd=tcp:127.0.0.1:5556-:5555",
-    "-device", f"virtio-net-pci,netdev=net0,mac={guest_mac}",
-    "-device", "virtio-gpu-gl-pci", "-display", "none", "-spice",
-    f"unix=on,addr={directory}/spice.sock,disable-ticketing=on,gl=on",
+    "-device", f"virtio-net-pci,netdev=net0,mac={guest_mac}", "-device", "virtio-rng-pci",
+    "-device", "virtio-gpu-gl-pci", "-display", "egl-headless", "-spice",
+    f"unix=on,addr={directory}/spice.sock,disable-ticketing=on",
     "-serial", f"file:{directory}/serial.log", "-monitor",
     f"unix:{directory}/monitor.sock,server,nowait",
 ]

@@ -5,7 +5,7 @@
 set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 gpu_dir="${VEMU_HOME:-$HOME/.local/share/vemu}"
-seed_profile=vemu-seed
+seed_profile=vemu-qemu-seed
 qemu_source="$gpu_dir/macports/bin/qemu-system-aarch64"
 qemu_runtime="$gpu_dir/qemu-system-aarch64"
 entitlements="$script_dir/../assets/gpu-entitlements.plist"
@@ -28,31 +28,32 @@ if [[ ! -x "$qemu_source" ]]; then
 fi
 [[ -x "$qemu_source" ]] || { printf 'QEMU build is missing: %s\n' "$qemu_source" >&2; exit 1; }
 if [[ ! -x "$qemu_runtime" || "$qemu_source" -nt "$qemu_runtime" || "$entitlements" -nt "$qemu_runtime" ]]; then
+    rm -f "$qemu_runtime.tmp"
     cp "$qemu_source" "$qemu_runtime.tmp"
+    xattr -c "$qemu_runtime.tmp"
     codesign --force --sign - --entitlements "$entitlements" "$qemu_runtime.tmp" >/dev/null
     mv "$qemu_runtime.tmp" "$qemu_runtime"
 fi
 codesign --verify --strict "$qemu_runtime"
 
-if [[ -f "$gpu_dir/disk.raw" && -f "$gpu_dir/ssh_key" ]]; then
-    printf 'Guest disk and SSH key already exist in %s\n' "$gpu_dir"
+if [[ -f "$gpu_dir/disk.raw" && -f "$gpu_dir/datadisk.qcow2" && -f "$gpu_dir/cidata.iso" &&
+      -f "$gpu_dir/ssh_key" ]]; then
+    printf 'Guest disks, cloud-init ISO, and SSH key already exist in %s\n' "$gpu_dir"
     exit 0
 fi
-[[ ! -e "$gpu_dir/disk.raw" ]] || {
-    printf 'A guest disk already exists, but its SSH key is missing: %s\n' "$gpu_dir" >&2
-    exit 1
-}
-[[ ! -e "$gpu_dir/ssh_key" ]] || {
-    printf 'An SSH key already exists, but its guest disk is missing: %s\n' "$gpu_dir" >&2
-    exit 1
-}
+for existing in disk.raw datadisk.qcow2 cidata.iso ssh_key; do
+    [[ ! -e "$gpu_dir/$existing" ]] || {
+        printf 'Incomplete guest runtime in %s; move existing guest files aside before setup\n' "$gpu_dir" >&2
+        exit 1
+    }
+done
 [[ "${VEMU_GUEST_USER:-$USER}" == "$USER" ]] || {
     printf 'Automatic setup uses the current Mac username; unset VEMU_GUEST_USER or provide a prepared guest\n' >&2
     exit 1
 }
 
 printf 'Preparing dedicated Colima profile %s (first run can take several minutes)...\n' "$seed_profile"
-colima start "$seed_profile" --arch aarch64 --vm-type vz \
+PATH="$gpu_dir/macports/bin:$PATH" colima start "$seed_profile" --arch aarch64 --vm-type qemu \
     --cpus 4 --memory 6 --disk 30 --root-disk 30 \
     --mount none --activate=false --ssh-config=false
 colima -p "$seed_profile" ssh -- sudo sh -s < "$script_dir/setup-guest.sh"
@@ -70,10 +71,34 @@ guest_mac="$(colima -p "$seed_profile" ssh -- cat /sys/class/net/eth0/address | 
 printf '%s\n' "$guest_mac" > "$gpu_dir/guest-mac"
 
 seed_disk="$HOME/.colima/_lima/colima-$seed_profile/disk"
-colima stop "$seed_profile"
+seed_datadisk="$HOME/.colima/_lima/_disks/colima-$seed_profile/datadisk"
+seed_cidata="$HOME/.colima/_lima/colima-$seed_profile/cidata.iso"
+colima -p "$seed_profile" ssh -- sudo sync
+colima stop "$seed_profile" &
+stop_pid=$!
+for _ in {1..45}; do
+    if ! kill -0 "$stop_pid" 2>/dev/null; then
+        wait "$stop_pid"
+        break
+    fi
+    sleep 1
+done
+if kill -0 "$stop_pid" 2>/dev/null; then
+    printf 'Colima did not shut down within 45 seconds; stopping the synchronized seed VM now...\n' >&2
+    colima stop "$seed_profile" --force
+    wait "$stop_pid" || true
+fi
 test -f "$seed_disk"
+test -f "$seed_datadisk"
+test -f "$seed_cidata"
 printf 'Copying stopped Colima root disk to %s/disk.raw...\n' "$gpu_dir"
 if ! /bin/cp -c "$seed_disk" "$gpu_dir/disk.raw"; then
     /bin/cp "$seed_disk" "$gpu_dir/disk.raw"
+fi
+if ! /bin/cp -c "$seed_datadisk" "$gpu_dir/datadisk.qcow2"; then
+    /bin/cp "$seed_datadisk" "$gpu_dir/datadisk.qcow2"
+fi
+if ! /bin/cp -c "$seed_cidata" "$gpu_dir/cidata.iso"; then
+    /bin/cp "$seed_cidata" "$gpu_dir/cidata.iso"
 fi
 printf 'Setup complete. The Colima seed remains stopped; vemu boots its disk copy.\n'

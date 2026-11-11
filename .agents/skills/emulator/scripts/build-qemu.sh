@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build a GPU-enabled QEMU in VEMU_HOME without administrator privileges.
 set -euo pipefail
+script_dir="$(cd "$(dirname "$0")" && pwd)"
 
 if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
     printf 'Usage: %s [--jobs N]\n' "$0"
@@ -63,6 +64,33 @@ fi
 export PATH="$prefix/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/opt/homebrew/sbin"
 printf 'Syncing MacPorts source recipes...\n'
 "$port" sync
+# ANGLE defaults to Apple's desktop OpenGL in the upstream MacPorts recipe.
+# Its Metal backend is required for a headless EGL context on macOS.
+angle_portfile="$prefix/var/macports/sources/rsync.macports.org/macports/release/tarballs/ports/graphics/angle/Portfile"
+python3 - "$angle_portfile" <<'PY'
+from pathlib import Path
+import sys
+
+portfile = Path(sys.argv[1])
+text = portfile.read_text()
+if text.count('angle_enable_metal=false') == 1:
+    portfile.write_text(text.replace('angle_enable_metal=false', 'angle_enable_metal=true'))
+elif text.count('angle_enable_metal=true') != 1:
+    raise SystemExit('Unexpected ANGLE Portfile; cannot enable Metal')
+PY
+# Upstream QEMU exposes egl-headless on macOS but never initializes an EGL
+# display there. The patch selects ANGLE's Metal EGL display explicitly.
+qemu_port_dir="$prefix/var/macports/sources/rsync.macports.org/macports/release/tarballs/ports/emulators/qemu"
+cp "$script_dir/../assets/qemu-macos-egl.patch" "$qemu_port_dir/files/patch-qemu-macos-egl.diff"
+if ! grep -Fqx 'patchfiles-append patch-qemu-macos-egl.diff' "$qemu_port_dir/Portfile"; then
+    printf '\npatchfiles-append patch-qemu-macos-egl.diff\n' >> "$qemu_port_dir/Portfile"
+fi
+virgl_port_dir="$prefix/var/macports/sources/rsync.macports.org/macports/release/tarballs/ports/graphics/virglrenderer"
+mkdir -p "$virgl_port_dir/files"
+cp "$script_dir/../assets/virglrenderer-macos-egl.patch" "$virgl_port_dir/files/patch-macos-external-egl.diff"
+if ! grep -Fqx 'patchfiles-append patch-macos-external-egl.diff' "$virgl_port_dir/Portfile"; then
+    printf '\npatchfiles-append patch-macos-external-egl.diff\n' >> "$virgl_port_dir/Portfile"
+fi
 # Apple's Xcode 15 Clang does not accept GN's C++23 spelling and rejects some
 # QEMU 11.1.3 ARM initializers. Use a user-installed Homebrew LLVM for both.
 if ! printf 'int main() {}\n' | /usr/bin/clang++ -std=c++23 -x c++ -fsyntax-only - >/dev/null 2>&1; then
