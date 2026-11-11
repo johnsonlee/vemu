@@ -32,6 +32,7 @@ base_sha256=6a3730de846bb78e3fb4ced2ed8d13f777e6aca2ab2f59cade9ca0d549ccc4ba
 source_dir="$build_root/MacPorts-$base_version"
 archive="$build_root/MacPorts-$base_version.tar.bz2"
 mkdir -p "$build_root"
+chmod 700 "$runtime"
 
 # MacPorts acts only as a source-build orchestrator in this private prefix.
 # Its no-root configuration never installs into /opt/local or asks for sudo.

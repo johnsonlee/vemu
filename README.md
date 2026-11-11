@@ -93,7 +93,7 @@ The first APK transfer from the Mac into the guest is still necessary because th
 
 ## Runtime security
 
-vemu no longer downloads or executes UTM or byte-patches its QEMU framework. The QEMU build uses checked source archives and patches from a private MacPorts tree, rejects QEMU older than 11.1.3, and disables the VNC server. Its SSH and ADB forwards bind to Mac loopback. The build and VM run under the current Mac user; no Mac administrator privilege is required.
+vemu no longer downloads or executes UTM or byte-patches its QEMU framework. The QEMU build uses checked source archives and patches from a private MacPorts tree, rejects QEMU older than 11.1.3, and disables the VNC server. Its SSH and ADB forwards bind to Mac loopback. The runtime directory is accessible only to the current Mac user, protecting its SSH key and local SPICE socket. The build and VM run under that user; no Mac administrator privilege is required.
 
 VirGL and SPICE still parse data from the guest on the host. Removing UTM does not make GPU virtualization a security boundary against hostile Android or Linux code. The original security rejection did not include a CVE or policy finding, so this change cannot claim that every reviewer criterion is satisfied. Review the selected QEMU, virglrenderer, ANGLE, and SPICE versions before using untrusted workloads.
 

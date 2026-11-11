@@ -22,6 +22,7 @@ if ! command -v docker >/dev/null; then brew install docker; fi
 if ! command -v adb >/dev/null; then brew install android-platform-tools; fi
 
 mkdir -p "$gpu_dir"
+chmod 700 "$gpu_dir"
 if [[ ! -x "$qemu_source" ]]; then
     "$script_dir/build-qemu.sh"
 fi

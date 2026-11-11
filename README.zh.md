@@ -93,7 +93,7 @@ adb devices -l
 
 ## 运行时安全
 
-vemu 不再下载或执行 UTM，也不再修改其 QEMU 框架二进制。QEMU 使用私有 MacPorts 构建树中带校验的源码归档与补丁，拒绝低于 11.1.3 的版本，并关闭 VNC 服务。SSH 和 ADB 转发仅绑定 Mac 的本机回环地址。构建和虚拟机都以当前 Mac 用户身份运行，不需要 Mac 管理员权限。
+vemu 不再下载或执行 UTM，也不再修改其 QEMU 框架二进制。QEMU 使用私有 MacPorts 构建树中带校验的源码归档与补丁，拒绝低于 11.1.3 的版本，并关闭 VNC 服务。SSH 和 ADB 转发仅绑定 Mac 的本机回环地址。运行目录仅允许当前 Mac 用户访问，以保护 SSH 密钥和本地 SPICE socket。构建和虚拟机都以该用户身份运行，不需要 Mac 管理员权限。
 
 VirGL 和 SPICE 仍会在宿主机解析客机发来的数据。移除 UTM 并不意味着 GPU 虚拟化可以安全隔离恶意 Android 或 Linux 代码。原安全审查没有提供 CVE 或具体规则，因此这项改动不能保证满足审查的全部要求。运行不可信负载前，应检查所使用的 QEMU、virglrenderer、ANGLE 和 SPICE 版本。
 
