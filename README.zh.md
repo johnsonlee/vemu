@@ -46,7 +46,7 @@ Mac 同时运行一个 QEMU 客机和一个活动的 Android 容器。Docker Com
    ./.agents/skills/emulator/scripts/vemu start
    ```
 
-   首次启动会在 `VEMU_HOME` 中引导私有的无 root [MacPorts](https://www.macports.org/) 构建树，编译带 VirGL 与 SPICE 的 QEMU，创建并配置 Colima 种子客机，复制已停止客机的根磁盘，拉取 Redroid 镜像并启动 Android。不需要系统安装 MacPorts，也不需要 Mac 管理员密码。首次从源码编译图形栈可能需要数小时；以后启动会复用构建结果和磁盘。
+   首次启动会在 `VEMU_HOME` 中引导私有的无 root [MacPorts](https://www.macports.org/) 构建树，编译带 VirGL 与 SPICE 的 QEMU，创建并配置 Colima 种子客机，复制已停止客机的根磁盘，拉取 Redroid 镜像并启动 Android。如果系统自带的 Apple Clang 较旧，会安装 Homebrew LLVM 来编译 GN 的 C++23 源码。不需要系统安装 MacPorts，也不需要 Mac 管理员密码。首次从源码编译图形栈可能需要数小时；以后启动会复用构建结果和磁盘。
 
 2. 如需显示 Android 画面：
 

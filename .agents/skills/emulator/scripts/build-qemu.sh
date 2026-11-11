@@ -63,6 +63,38 @@ fi
 export PATH="$prefix/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/opt/homebrew/sbin"
 printf 'Syncing MacPorts source recipes...\n'
 "$port" sync
+# Apple's Xcode 15 Clang does not accept the C++23 spelling used by GN 2602,
+# which ANGLE needs. Use a user-installed Homebrew LLVM compiler for GN only.
+if ! printf 'int main() {}\n' | /usr/bin/clang++ -std=c++23 -x c++ -fsyntax-only - >/dev/null 2>&1; then
+    command -v brew >/dev/null || {
+        printf 'Homebrew is required to install a C++23 compiler for GN\n' >&2
+        exit 1
+    }
+    if ! brew list --versions llvm >/dev/null 2>&1; then
+        brew install llvm
+    fi
+    llvm_prefix="$(brew --prefix llvm)"
+    "$llvm_prefix/bin/clang++" -std=c++23 -x c++ -fsyntax-only /dev/null || {
+        printf 'Homebrew LLVM does not support C++23\n' >&2
+        exit 1
+    }
+    gn_portfile="$prefix/var/macports/sources/rsync.macports.org/macports/release/tarballs/ports/devel/gn/Portfile"
+    python3 - "$gn_portfile" "$llvm_prefix" <<'PY'
+from pathlib import Path
+import sys
+
+portfile = Path(sys.argv[1])
+llvm = Path(sys.argv[2])
+text = portfile.read_text()
+needle = 'compiler.cxx_standard   2023\n'
+if text.count(needle) != 1:
+    raise SystemExit('Unexpected GN Portfile; cannot apply the local C++23 compiler override')
+override = (f'configure.cc        {llvm}/bin/clang\n'
+            f'configure.cxx       {llvm}/bin/clang++\n')
+if override not in text:
+    portfile.write_text(text.replace(needle, needle + override))
+PY
+fi
 printf 'Building ANGLE, VirGL, SPICE, and QEMU in %s...\n' "$prefix"
 "$port" -N install libepoxy +egl +quartz -x11
 "$port" -N install virglrenderer +quartz -x11
