@@ -46,7 +46,7 @@ The previous verified combination was Apple M3 Max, macOS 14.3, UTM QEMU 9.1.2, 
    ./.agents/skills/emulator/scripts/vemu start
    ```
 
-   The first start bootstraps a private, rootless [MacPorts](https://www.macports.org/) build tree in `VEMU_HOME`, compiles QEMU with VirGL and SPICE, creates and prepares the Colima seed, copies its stopped root disk, pulls Redroid, and starts Android. On older Apple Clang versions, it installs Homebrew LLVM to compile GN's C++23 source. No system MacPorts installation or `sudo` on the Mac is required. Building the graphics stack from source can take hours; later starts reuse it and the disk.
+   The first start bootstraps a private, rootless [MacPorts](https://www.macports.org/) build tree in `VEMU_HOME`, compiles QEMU with VirGL and SPICE, creates and prepares the Colima seed, copies its stopped root disk, pulls Redroid, and starts Android. On older Apple Clang versions, it installs Homebrew LLVM to compile GN and QEMU. No system MacPorts installation or `sudo` on the Mac is required. Building the graphics stack from source can take hours; later starts reuse it and the disk.
 
 2. Connect to the Android display, if desired:
 

@@ -63,8 +63,8 @@ fi
 export PATH="$prefix/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/opt/homebrew/sbin"
 printf 'Syncing MacPorts source recipes...\n'
 "$port" sync
-# Apple's Xcode 15 Clang does not accept the C++23 spelling used by GN 2602,
-# which ANGLE needs. Use a user-installed Homebrew LLVM compiler for GN only.
+# Apple's Xcode 15 Clang does not accept GN's C++23 spelling and rejects some
+# QEMU 11.1.3 ARM initializers. Use a user-installed Homebrew LLVM for both.
 if ! printf 'int main() {}\n' | /usr/bin/clang++ -std=c++23 -x c++ -fsyntax-only - >/dev/null 2>&1; then
     command -v brew >/dev/null || {
         printf 'Homebrew is required to install a C++23 compiler for GN\n' >&2
@@ -93,6 +93,22 @@ override = (f'configure.cc        {llvm}/bin/clang\n'
             f'configure.cxx       {llvm}/bin/clang++\n')
 if override not in text:
     portfile.write_text(text.replace(needle, needle + override))
+PY
+    qemu_portfile="$prefix/var/macports/sources/rsync.macports.org/macports/release/tarballs/ports/emulators/qemu/Portfile"
+    python3 - "$qemu_portfile" "$llvm_prefix" <<'PY'
+from pathlib import Path
+import sys
+
+portfile = Path(sys.argv[1])
+llvm = Path(sys.argv[2])
+text = portfile.read_text()
+needle = 'configure.args          --cpu=${host_cpu} \\\n'
+if text.count(needle) != 1:
+    raise SystemExit('Unexpected QEMU Portfile; cannot apply the local compiler override')
+override = (f'configure.cc           {llvm}/bin/clang\n'
+            f'configure.cxx          {llvm}/bin/clang++\n')
+if override not in text:
+    portfile.write_text(text.replace(needle, override + needle))
 PY
 fi
 printf 'Building ANGLE, VirGL, SPICE, and QEMU in %s...\n' "$prefix"
