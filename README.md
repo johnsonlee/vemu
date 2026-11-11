@@ -2,18 +2,18 @@
 
 [简体中文](README.zh.md) · [MIT License](LICENSE)
 
-vemu runs Android 16 on Apple Silicon macOS with GPU-backed rendering. It starts an ARM64 Linux guest with UTM's QEMU, runs [Redroid](https://github.com/remote-android/redroid-doc) through Docker Compose, and sends Android OpenGL work through VirGL and ANGLE to the Mac GPU. Device profiles select Android properties and display settings.
+vemu runs Android 16 on Apple Silicon macOS with GPU-backed rendering. It starts an ARM64 Linux guest with a locally built QEMU, runs [Redroid](https://github.com/remote-android/redroid-doc) through Docker Compose, and sends Android OpenGL work through VirGL and ANGLE to the Mac GPU. Device profiles select Android properties and display settings.
 
 > [!IMPORTANT]
-> **Experimental setup.** First start downloads UTM and creates a dedicated Linux guest disk. The complete fresh setup has been verified on one M3 Max Mac; other Apple Silicon Macs and future guest kernels need testing. The idle CPU measurements below are local diagnostics, not a general performance benchmark.
+> **Experimental setup.** First start builds GPU-enabled QEMU and its graphics dependencies from source in the user's runtime directory, then creates a dedicated Linux guest disk. The new path booted Redroid with VirGL on one M3 Max Mac; other Macs still need testing. `vemu start` fails if Android's renderer does not name VirGL and Apple.
 
-On first start, vemu creates a dedicated [Colima](https://github.com/abiosoft/colima)/Lima ARM64 Ubuntu guest, prepares Docker, Binder/ashmem, and SSH, stops Colima, and copies its root disk. `vemu` then boots that copy directly with UTM's QEMU to expose the VirGL render device. Colima prepares the disk; it does not run alongside vemu.
+On first start, vemu creates a dedicated [Colima](https://github.com/abiosoft/colima)/Lima ARM64 Ubuntu guest with QEMU, prepares Docker, Binder/ashmem, and SSH, stops Colima, and copies its root disk, QCOW2 data disk, and cloud-init ISO. `vemu` then boots those copies directly with the locally built QEMU to expose the VirGL render device. Colima prepares the disks; it does not run alongside vemu.
 
 ## How it works
 
 ```text
 Android app → Redroid container → Linux virtio-gpu/VirGL
-            → UTM QEMU (HVF) → ANGLE/Metal → Mac GPU
+            → local QEMU (HVF) → ANGLE/Metal → Mac GPU
 
 Mac adb :5556 → QEMU port forward → guest Docker :5555 → Android adbd
 ```
@@ -22,17 +22,17 @@ The Mac runs one QEMU guest and one active Android container at a time. Docker C
 
 The repository includes [`compose.yaml`](compose.yaml) for Redroid and [`compose.apk.yaml`](compose.apk.yaml) for the optional APK bind mount. `vemu start` copies these files and the selected profiles into `/opt/vemu/` in the guest, then runs `docker compose up -d --force-recreate` there. The Mac script manages QEMU; Compose manages the Android container.
 
-The setup script stops the `vemu-seed` Colima profile before copying its disk. It retains the stopped seed profile for troubleshooting. vemu uses a separate disk copy, so Colima never writes to vemu's active disk.
+The setup script stops the `vemu-qemu-seed` Colima profile before copying its disk. It retains the stopped seed profile for troubleshooting. vemu uses a separate disk copy, so Colima never writes to vemu's active disk.
 
 ## Requirements
 
 | Location | Requirement |
 | --- | --- |
 | Mac | Apple Silicon macOS, [Homebrew](https://brew.sh/), Xcode Command Line Tools (`clang`), Python 3, and SSH. [scrcpy](https://github.com/Genymobile/scrcpy) is optional for a display window. |
-| First start | Network access and free disk space for a 30 GiB guest root disk, its copy, UTM, Linux packages, and the Redroid image. The script installs missing Colima, Docker CLI, and [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools) with Homebrew. |
-| Runtime directory | `~/.local/share/vemu/` holds the downloaded or linked UTM 4.6.5 app, `disk.raw`, a dedicated SSH key, and the guest NIC MAC. These are created automatically. |
+| First start | Network access and free disk space for a 30 GiB guest root disk, a 30 GiB QCOW2 data disk, their copies, QEMU and graphics build dependencies, Linux packages, and the Redroid image. The script installs missing Colima, Docker CLI, and [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools) with Homebrew. |
+| Runtime directory | `~/.local/share/vemu/` holds the source-build toolchain, signed QEMU runtime, `disk.raw`, `datadisk.qcow2`, `cidata.iso`, a dedicated SSH key, and the guest NIC MAC. These are created automatically without administrator privileges. |
 
-The tested combination is Apple M3 Max, macOS 14.3, UTM 4.6.5 / QEMU 9.1.2, and `redroid/redroid:16.0.0_64only-latest`. UTM, the guest disk, SSH keys, APKs, and Android data volumes are not committed to Git. The launch script uses 4 vCPUs and 6 GiB guest RAM.
+The source-built path was verified on Apple M3 Max, macOS 14.3, QEMU 11.1.3, and `redroid/redroid:16.0.0_64only-latest`. QEMU, guest disks, SSH keys, APKs, and Android data volumes are not committed to Git. The launch script uses 4 vCPUs and 6 GiB guest RAM.
 
 `VEMU_HOME` can point to a different runtime directory. `VEMU_GUEST_USER` can select another username for a manually prepared guest; automated setup uses the current Mac username. These are environment variables, not CLI options.
 
@@ -46,7 +46,7 @@ The tested combination is Apple M3 Max, macOS 14.3, UTM 4.6.5 / QEMU 9.1.2, and 
    ./.agents/skills/emulator/scripts/vemu start
    ```
 
-   The first start downloads [UTM 4.6.5 from its official GitHub release](https://github.com/utmapp/UTM/releases/tag/v4.6.5) unless that version is already in `/Applications`, creates and prepares the Colima seed, copies its stopped root disk, pulls Redroid, and starts Android. It may take several minutes. Later starts reuse the disk.
+   The first start bootstraps a private, rootless [MacPorts](https://www.macports.org/) build tree in `VEMU_HOME`, compiles QEMU with VirGL and SPICE, creates a bootable Colima QEMU seed, copies its stopped disks, pulls Redroid, and starts Android. On older Apple Clang versions, it installs Homebrew LLVM to compile GN and QEMU. No system MacPorts installation or `sudo` on the Mac is required. Building the graphics stack from source can take hours; later starts reuse it and the disks.
 
 2. Connect to the Android display, if desired:
 
@@ -60,7 +60,7 @@ The tested combination is Apple M3 Max, macOS 14.3, UTM 4.6.5 / QEMU 9.1.2, and 
    ./.agents/skills/emulator/scripts/vemu stop
    ```
 
-Run `vemu setup` to prepare the runtime without starting Android. The start command compiles and signs its small QEMU loader on first use, provisions Binderfs in the guest, syncs Compose and profile files, creates the selected data volume, and waits for Android and VirGL. SSH listens on Mac `127.0.0.1:2223`; ADB listens on Mac `127.0.0.1:5556`.
+Run `vemu setup` to prepare the runtime without starting Android. It builds and signs QEMU with the Hypervisor entitlement, provisions Binderfs in a Colima QEMU seed guest, and copies its stopped root and data disks and cloud-init ISO. `vemu start` then syncs Compose and profile files, creates the selected data volume, and waits for Android and VirGL. SSH listens on Mac `127.0.0.1:2223`; ADB listens on Mac `127.0.0.1:5556`.
 
 ## CLI
 
@@ -78,7 +78,7 @@ vemu scrcpy [--secure]
 | `--apk` | Installs an APK during `start`. The script copies it from the Mac to the Linux guest once per SHA-256 hash, bind mounts it read-only as `/data/local/tmp/app.apk`, and runs `pm install -r` inside the container. It does not copy the APK through ADB. |
 | `--fps` | Sets Redroid's display refresh cap. Default: 30. Use `--fps 15` if you prefer a lower refresh rate. |
 
-The earlier 15 FPS default reduced host CPU in one high-wakeup episode but limited animation smoothness. vemu now fixes the short-timer wait in its pinned UTM QEMU 9.1.2 build, so the default is back to 30 FPS. The original QEMU skips sleeping when a guest virtual timer is due within 2 ms. vemu patches that branch in a verified runtime copy and uses a high-precision macOS timer while preserving IPI wakeups. The original UTM app stays untouched. See [idle CPU analysis](docs/idle-cpu.md) for measurements and limitations.
+The old QEMU 9.1.2 runtime needed a binary patch and a macOS symbol interposer to avoid spinning on short WFI timers. QEMU 11.1.3 uses an event-driven WFI timer, so vemu no longer applies that binary patch or loads the interposer. It does apply small, tracked source patches to enable ANGLE Metal EGL in QEMU and VirGL. See the [historical idle CPU analysis](docs/idle-cpu.md). The new runtime's CPU behavior still needs representative multi-graph load testing.
 
 
 Examples:
@@ -90,6 +90,12 @@ adb devices -l
 ```
 
 The first APK transfer from the Mac into the guest is still necessary because this QEMU setup has no shared filesystem. Reusing the same APK skips that transfer.
+
+## Runtime security
+
+vemu no longer downloads or executes UTM or byte-patches its QEMU framework. The QEMU build uses checked source archives from a private MacPorts tree plus the tracked [QEMU EGL](.agents/skills/emulator/assets/qemu-macos-egl.patch) and [VirGL EGL](.agents/skills/emulator/assets/virglrenderer-macos-egl.patch) patches, rejects QEMU older than 11.1.3, and disables the VNC server. Its SSH and ADB forwards bind to Mac loopback. The runtime directory is accessible only to the current Mac user, protecting its SSH key and local SPICE socket. The build and VM run under that user; no Mac administrator privilege is required.
+
+VirGL and SPICE still parse data from the guest on the host. Removing UTM does not make GPU virtualization a security boundary against hostile Android or Linux code. The original security rejection did not include a CVE or policy finding, so this change cannot claim that every reviewer criterion is satisfied. Review the selected QEMU, virglrenderer, ANGLE, and SPICE versions before using untrusted workloads.
 
 ## Secure activities
 
@@ -130,14 +136,14 @@ adb -s 127.0.0.1:5556 shell wm density
 adb -s 127.0.0.1:5556 shell dumpsys SurfaceFlinger | grep '^GLES:'
 ```
 
-Expect `sys.boot_completed=1`, the selected model and screen settings, and a renderer containing `virgl` and `Apple`. On the tested M3 Max, SurfaceFlinger reported `virgl (ANGLE (Apple, Apple M3 Max, OpenGL 4.1 Metal - 88))`. This verifies the graphics path, not frame rate or performance.
+Expect `sys.boot_completed=1`, the selected model and screen settings, and a renderer containing `virgl` and `Apple`. On the tested M3 Max, the source-built runtime's renderer contained `virgl (ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max`. Renderer identity verifies the graphics path, not frame rate or performance.
 
 ## Known limitations
 
 - The setup path has been tested on one M3 Max Mac. It relies on Colima's current ARM64 Ubuntu kernel and a pinned ashmem DKMS source; a different guest kernel may need updated module support. No guest image is distributed.
 - The Redroid container runs with Docker `privileged` access and mapped Binder devices inside the dedicated guest.
 - Profiles change reported identity strings, including the fingerprint and Java `http.agent`, plus display properties. The actual firmware, security patch contents, WebView version, and hardware remain Redroid. `--name` still overrides `ro.product.device` for ADB's `device:` field, even though the reported fingerprint contains the profile's device codename. Apps may override their own User-Agent; these profiles cannot provide genuine Samsung or Google firmware or device integrity attestation. See the [Android WebSettings API](https://developer.android.com/reference/android/webkit/WebSettings).
-- GPU functionality has been checked on one Mac configuration. Other Apple Silicon Macs and guest kernels need verification.
+- The source-built GPU path has been verified on one Apple M3 Max / macOS 14.3 machine. Other Macs and guest kernels still need verification.
 
 ## Contributing
 
@@ -145,4 +151,4 @@ Issues and pull requests are welcome. For runtime bugs, include the Mac model an
 
 ## License
 
-[MIT](LICENSE). UTM, Redroid, Android, and scrcpy are separate projects under their own licenses.
+[MIT](LICENSE). QEMU, MacPorts, Redroid, Android, and scrcpy are separate projects under their own licenses.
