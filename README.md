@@ -60,7 +60,7 @@ The previous verified combination was Apple M3 Max, macOS 14.3, UTM QEMU 9.1.2, 
    ./.agents/skills/emulator/scripts/vemu stop
    ```
 
-Run `vemu setup` to prepare the runtime without starting Android. The setup command signs the locally built QEMU runtime with the Hypervisor entitlement, provisions Binderfs in the guest, syncs Compose and profile files, creates the selected data volume, and waits for Android and VirGL. SSH listens on Mac `127.0.0.1:2223`; ADB listens on Mac `127.0.0.1:5556`.
+Run `vemu setup` to prepare the runtime without starting Android. It builds and signs QEMU with the Hypervisor entitlement, provisions Binderfs in a Colima seed guest, and copies the stopped guest disk. `vemu start` then syncs Compose and profile files, creates the selected data volume, and waits for Android and VirGL. SSH listens on Mac `127.0.0.1:2223`; ADB listens on Mac `127.0.0.1:5556`.
 
 ## CLI
 

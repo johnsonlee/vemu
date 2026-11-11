@@ -60,7 +60,7 @@ Mac 同时运行一个 QEMU 客机和一个活动的 Android 容器。Docker Com
    ./.agents/skills/emulator/scripts/vemu stop
    ```
 
-可以先运行 `vemu setup`，只准备运行环境而不启动 Android。准备命令会给本地构建的 QEMU 运行时签发 Hypervisor 权限，在客机中配置 Binderfs、同步 Compose 与设备配置文件、创建所选数据卷，并等待 Android 和 VirGL 就绪。Mac 上的 SSH 监听 `127.0.0.1:2223`，ADB 监听 `127.0.0.1:5556`。
+可以先运行 `vemu setup`，只准备运行环境而不启动 Android。它会构建 QEMU、签发 Hypervisor 权限、在 Colima 种子客机中配置 Binderfs，并复制已停止的客机磁盘。随后 `vemu start` 会同步 Compose 与设备配置文件、创建所选数据卷，并等待 Android 和 VirGL 就绪。Mac 上的 SSH 监听 `127.0.0.1:2223`，ADB 监听 `127.0.0.1:5556`。
 
 ## 命令行用法
 
