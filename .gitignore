@@ -4,5 +4,7 @@ __pycache__/
 *.apk
 *.raw
 *.qcow2
-UTM.app/
+qemu-build/
+qemu-system-aarch64
+macports/
 artifacts/

@@ -1,0 +1,48 @@
+--- ui/egl-helpers.c.orig
++++ ui/egl-helpers.c
+@@ -490,7 +490,7 @@
+ 
+ /* ---------------------------------------------------------------------- */
+ 
+-#if defined(CONFIG_X11) || defined(CONFIG_GBM) || defined(WIN32)
++#if defined(CONFIG_X11) || defined(CONFIG_GBM) || defined(WIN32) || defined(__APPLE__)
+ 
+ /*
+  * Taken from glamor_egl.h from the Xorg xserver, which is MIT licensed
+@@ -525,6 +525,15 @@
+ {
+     EGLDisplay dpy = EGL_NO_DISPLAY;
+ 
++#ifdef __APPLE__
++    /* EGL_ANGLE_platform_angle selects Metal instead of desktop OpenGL. */
++    static const EGLint angle_attrs[] = { 0x3203, 0x3489, EGL_NONE };
++    if (!epoxy_has_egl_extension(NULL, "EGL_ANGLE_platform_angle")) {
++        return EGL_NO_DISPLAY;
++    }
++    return eglGetPlatformDisplayEXT(0x3202, NULL, angle_attrs);
++#endif
++
+     /* In practise any EGL 1.5 implementation would support the EXT extension */
+     if (epoxy_has_egl_extension(NULL, "EGL_EXT_platform_base")) {
+         if (platform != 0) {
+@@ -723,6 +732,20 @@
+         error_setg(errp, "egl: render node init failed");
+         return false;
+     }
++#elif defined(__APPLE__)
++    /* ANGLE provides a surfaceless EGL display backed by Metal. */
++    if (mode == DISPLAY_GL_MODE_ON) {
++        mode = DISPLAY_GL_MODE_ES;
++    }
++    if (qemu_egl_init_dpy(EGL_DEFAULT_DISPLAY, 0, mode) < 0) {
++        error_setg(errp, "egl: ANGLE display init failed");
++        return false;
++    }
++    qemu_egl_rn_ctx = qemu_egl_init_ctx();
++    if (!qemu_egl_rn_ctx) {
++        error_setg(errp, "egl: ANGLE context init failed");
++        return false;
++    }
+ #endif
+ 
+     if (!qemu_egl_rn_ctx) {

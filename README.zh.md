@@ -2,18 +2,18 @@
 
 [English](README.md) · [MIT 许可证](LICENSE)
 
-vemu 在 Apple Silicon Mac 上运行使用 GPU 渲染的 Android 16。它通过 UTM 的 QEMU 启动 ARM64 Linux 客机，在客机中通过 Docker Compose 运行 [Redroid](https://github.com/remote-android/redroid-doc)，再经 VirGL 和 ANGLE 将 Android 的 OpenGL 绘制交给 Mac GPU。设备配置可切换 Android 系统属性和屏幕参数。
+vemu 在 Apple Silicon Mac 上运行使用 GPU 渲染的 Android 16。它通过本地构建的 QEMU 启动 ARM64 Linux 客机，在客机中通过 Docker Compose 运行 [Redroid](https://github.com/remote-android/redroid-doc)，再经 VirGL 和 ANGLE 将 Android 的 OpenGL 绘制交给 Mac GPU。设备配置可切换 Android 系统属性和屏幕参数。
 
 > [!IMPORTANT]
-> **实验性项目。** 首次启动会自动下载 UTM 并创建专用的 Linux 客机磁盘。完整的全新安装流程只在一台 M3 Max Mac 上验证过；其他 Apple Silicon Mac 和未来的客机内核仍需测试。下文的空闲 CPU 数据是本地诊断结果，不代表一般性能基准。
+> **实验性项目。** 首次启动会在用户运行目录中从源码构建带 GPU 支持的 QEMU 及图形依赖，再创建专用 Linux 客机磁盘。新方案已在一台 M3 Max Mac 上完成 Redroid 与 VirGL 开机验证，其他 Mac 仍需测试。若 Android 渲染器不包含 VirGL 和 Apple，`vemu start` 会失败。
 
-首次启动时，vemu 会创建专用的 [Colima](https://github.com/abiosoft/colima)/Lima ARM64 Ubuntu 客机，准备 Docker、Binder/ashmem 和 SSH，停止 Colima 后复制其根磁盘。随后 `vemu` 使用 UTM 的 QEMU 直接启动磁盘副本，提供 VirGL 渲染设备。Colima 负责准备磁盘，不与 vemu 同时运行。
+首次启动时，vemu 会通过 QEMU 创建专用的 [Colima](https://github.com/abiosoft/colima)/Lima ARM64 Ubuntu 客机，准备 Docker、Binder/ashmem 和 SSH，停止 Colima 后复制其根磁盘、QCOW2 数据盘和 cloud-init ISO。随后 `vemu` 使用本地构建的 QEMU 直接启动这些副本，提供 VirGL 渲染设备。Colima 负责准备磁盘，不与 vemu 同时运行。
 
 ## 工作原理
 
 ```text
 Android 应用 → Redroid 容器 → Linux virtio-gpu/VirGL
-             → UTM QEMU (HVF) → ANGLE/Metal → Mac GPU
+             → 本地 QEMU (HVF) → ANGLE/Metal → Mac GPU
 
 Mac adb :5556 → QEMU 端口转发 → 客机 Docker :5555 → Android adbd
 ```
@@ -22,17 +22,17 @@ Mac 同时运行一个 QEMU 客机和一个活动的 Android 容器。Docker Com
 
 仓库包含用于 Redroid 的 [`compose.yaml`](compose.yaml)，以及安装 APK 时额外使用的 [`compose.apk.yaml`](compose.apk.yaml)。`vemu start` 将这些文件和机型配置复制到客机的 `/opt/vemu/`，然后在客机中运行 `docker compose up -d --force-recreate`。Mac 脚本管理 QEMU，Compose 管理 Android 容器。
 
-准备脚本会先停止 `vemu-seed` Colima profile，再复制磁盘。已停止的种子 profile 会保留，便于排查问题；vemu 使用独立副本，Colima 不会写入 vemu 正在使用的磁盘。
+准备脚本会先停止 `vemu-qemu-seed` Colima profile，再复制磁盘。已停止的种子 profile 会保留，便于排查问题；vemu 使用独立副本，Colima 不会写入 vemu 正在使用的磁盘。
 
 ## 运行条件
 
 | 位置 | 要求 |
 | --- | --- |
 | Mac | Apple Silicon macOS、[Homebrew](https://brew.sh/)、Xcode Command Line Tools（`clang`）、Python 3 和 SSH。[scrcpy](https://github.com/Genymobile/scrcpy) 可选，用于显示 Android 画面。 |
-| 首次启动 | 需要网络连接，以及足够容纳 30 GiB 客机根磁盘及其副本、UTM、Linux 软件包和 Redroid 镜像的磁盘空间。脚本会通过 Homebrew 安装缺少的 Colima、Docker CLI 和 [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)。 |
-| 运行目录 | `~/.local/share/vemu/` 保存自动下载或链接的 UTM 4.6.5、`disk.raw`、专用 SSH 密钥和客机网卡 MAC 地址。 |
+| 首次启动 | 需要网络连接，以及足够容纳 30 GiB 客机根磁盘、30 GiB QCOW2 数据盘及其副本、QEMU 与图形库构建依赖、Linux 软件包和 Redroid 镜像的磁盘空间。脚本会通过 Homebrew 安装缺少的 Colima、Docker CLI 和 [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)。 |
+| 运行目录 | `~/.local/share/vemu/` 保存源码构建工具链、已签名 QEMU、`disk.raw`、`datadisk.qcow2`、`cidata.iso`、专用 SSH 密钥和客机网卡 MAC 地址。整个构建无需 Mac 管理员权限。 |
 
-已验证的组合为 Apple M3 Max、macOS 14.3、UTM 4.6.5 / QEMU 9.1.2，以及 `redroid/redroid:16.0.0_64only-latest`。UTM、客机磁盘、SSH 密钥、APK 和 Android 数据卷都不会提交到 Git。启动脚本为客机分配 4 个 vCPU 和 6 GiB 内存。
+源码构建方案已在 Apple M3 Max、macOS 14.3、QEMU 11.1.3 和 `redroid/redroid:16.0.0_64only-latest` 的组合上验证。QEMU、客机磁盘、SSH 密钥、APK 和 Android 数据卷都不会提交到 Git。启动脚本为客机分配 4 个 vCPU 和 6 GiB 内存。
 
 可以用 `VEMU_HOME` 指向其他运行目录。对于手工准备的客机，可以用 `VEMU_GUEST_USER` 指定其他 Linux 用户名；自动准备流程使用当前 Mac 用户名。这两个是环境变量，不是命令行选项。
 
@@ -46,7 +46,7 @@ Mac 同时运行一个 QEMU 客机和一个活动的 Android 容器。Docker Com
    ./.agents/skills/emulator/scripts/vemu start
    ```
 
-   首次启动会从 [UTM 4.6.5 官方 GitHub 发布页](https://github.com/utmapp/UTM/releases/tag/v4.6.5)下载 UTM（如果 `/Applications` 中已有该版本则直接使用），创建并配置 Colima 种子客机，复制已停止客机的根磁盘，拉取 Redroid 镜像并启动 Android。这一步可能需要几分钟；以后启动会复用磁盘。
+   首次启动会在 `VEMU_HOME` 中引导私有的无 root [MacPorts](https://www.macports.org/) 构建树，编译带 VirGL 与 SPICE 的 QEMU，创建可由 UEFI 启动的 Colima QEMU 种子客机，复制已停止客机的磁盘，拉取 Redroid 镜像并启动 Android。如果系统自带的 Apple Clang 较旧，会安装 Homebrew LLVM 来编译 GN 和 QEMU。不需要系统安装 MacPorts，也不需要 Mac 管理员密码。首次从源码编译图形栈可能需要数小时；以后启动会复用构建结果和磁盘。
 
 2. 如需显示 Android 画面：
 
@@ -60,7 +60,7 @@ Mac 同时运行一个 QEMU 客机和一个活动的 Android 容器。Docker Com
    ./.agents/skills/emulator/scripts/vemu stop
    ```
 
-可以先运行 `vemu setup`，只准备运行环境而不启动 Android。启动命令会在首次使用时编译并签名一个小型 QEMU 加载器，在客机中配置 Binderfs、同步 Compose 与设备配置文件、创建所选数据卷，并等待 Android 和 VirGL 就绪。Mac 上的 SSH 监听 `127.0.0.1:2223`，ADB 监听 `127.0.0.1:5556`。
+可以先运行 `vemu setup`，只准备运行环境而不启动 Android。它会构建 QEMU、签发 Hypervisor 权限、在 Colima QEMU 种子客机中配置 Binderfs，并复制已停止客机的根磁盘、数据盘和 cloud-init ISO。随后 `vemu start` 会同步 Compose 与设备配置文件、创建所选数据卷，并等待 Android 和 VirGL 就绪。Mac 上的 SSH 监听 `127.0.0.1:2223`，ADB 监听 `127.0.0.1:5556`。
 
 ## 命令行用法
 
@@ -78,7 +78,7 @@ vemu scrcpy [--secure]
 | `--apk` | 在 `start` 期间安装 APK。脚本按 SHA-256 哈希将 APK 从 Mac 向 Linux 客机复制一次，然后以只读方式映射为容器内的 `/data/local/tmp/app.apk`，在容器内运行 `pm install -r`。APK 不通过 ADB 复制。 |
 | `--fps` | 设置 Redroid 的画面刷新率上限。默认 30；如果希望进一步降低刷新率，可用 `--fps 15`。 |
 
-此前的 15 FPS 默认值在一次高频唤醒期间降低了 CPU 占用，但限制动画流畅度。vemu 现在修复固定版本 UTM QEMU 9.1.2 的短定时器等待，因此默认恢复 30 FPS。原版 QEMU 在客机虚拟定时器距触发不足 2 ms 时跳过休眠；vemu 在经过校验的运行时副本中修补该分支，并用 macOS 高精度定时器等待，同时保留 IPI 唤醒。原始 UTM.app 不变。实测数据和限制见[空闲 CPU 分析](docs/idle-cpu.md)。
+旧版 QEMU 9.1.2 曾需要二进制补丁和 macOS 符号插桩，以避免短 WFI 定时器空转。QEMU 11.1.3 已改用事件驱动的 WFI 定时器，因此 vemu 不再应用该二进制补丁或加载插桩库。它会应用仓库中可审查的小型源码补丁，为 QEMU 和 VirGL 启用 ANGLE Metal EGL。见[历史空闲 CPU 分析](docs/idle-cpu.md)。新运行时的 CPU 表现仍需在有代表性的多图负载下验证。
 
 
 示例：
@@ -90,6 +90,12 @@ adb devices -l
 ```
 
 由于当前 QEMU 配置没有共享文件系统，APK 首次从 Mac 传入客机仍是必要的；重复使用同一个 APK 时会跳过该次传输。
+
+## 运行时安全
+
+vemu 不再下载或执行 UTM，也不再修改其 QEMU 框架二进制。QEMU 使用私有 MacPorts 构建树中带校验的源码归档，以及仓库中的 [QEMU EGL](.agents/skills/emulator/assets/qemu-macos-egl.patch) 和 [VirGL EGL](.agents/skills/emulator/assets/virglrenderer-macos-egl.patch) 源码补丁；拒绝低于 11.1.3 的版本，并关闭 VNC 服务。SSH 和 ADB 转发仅绑定 Mac 的本机回环地址。运行目录仅允许当前 Mac 用户访问，以保护 SSH 密钥和本地 SPICE socket。构建和虚拟机都以该用户身份运行，不需要 Mac 管理员权限。
+
+VirGL 和 SPICE 仍会在宿主机解析客机发来的数据。移除 UTM 并不意味着 GPU 虚拟化可以安全隔离恶意 Android 或 Linux 代码。原安全审查没有提供 CVE 或具体规则，因此这项改动不能保证满足审查的全部要求。运行不可信负载前，应检查所使用的 QEMU、virglrenderer、ANGLE 和 SPICE 版本。
 
 ## SECURE 页面
 
@@ -130,14 +136,14 @@ adb -s 127.0.0.1:5556 shell wm density
 adb -s 127.0.0.1:5556 shell dumpsys SurfaceFlinger | grep '^GLES:'
 ```
 
-预期结果是 `sys.boot_completed=1`、所选型号和屏幕参数，以及包含 `virgl` 和 `Apple` 的渲染器。在测试使用的 M3 Max 上，SurfaceFlinger 报告 `virgl (ANGLE (Apple, Apple M3 Max, OpenGL 4.1 Metal - 88))`。这验证的是图形渲染路径，不代表帧率或性能结论。
+预期结果是 `sys.boot_completed=1`、所选型号和屏幕参数，以及包含 `virgl` 和 `Apple` 的渲染器。在测试用的 M3 Max 上，源码构建运行时返回的渲染器包含 `virgl (ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max`。渲染器名称只能验证图形路径，不能证明帧率或性能。
 
 ## 已知限制
 
 - 自动准备流程只在一台 M3 Max Mac 上验证过。它依赖 Colima 当前使用的 ARM64 Ubuntu 内核和固定版本的 ashmem DKMS 源码；未来内核可能需要更新模块支持。项目不分发客机镜像。
 - Redroid 容器在专用客机内以 Docker `privileged` 权限运行，并映射 Binder 设备。
 - 配置会改变上报的型号、指纹、Java `http.agent` 和屏幕参数；实际固件、安全补丁内容、WebView 版本及硬件仍属于 Redroid。`--name` 仍覆盖 `ro.product.device`，以设置 ADB 输出中的 `device:` 字段，因此该值会与指纹中的设备代号不同。应用可以覆盖自己的 User-Agent；这些配置不会提供真正的 Samsung 或 Google 固件，也不能提供设备完整性证明。参见 [Android WebSettings API](https://developer.android.com/reference/android/webkit/WebSettings)。
-- GPU 功能目前只在一种 Mac 配置上验证过。其他 Apple Silicon Mac 和客机内核仍需验证。
+- 源码构建的 GPU 路线已在一台 Apple M3 Max / macOS 14.3 机器上验证；其他 Mac 和客机内核仍需验证。
 
 ## 参与贡献
 
@@ -145,4 +151,4 @@ adb -s 127.0.0.1:5556 shell dumpsys SurfaceFlinger | grep '^GLES:'
 
 ## 许可证
 
-本项目采用 [MIT 许可证](LICENSE)。UTM、Redroid、Android 和 scrcpy 是独立项目，分别遵循各自的许可证。
+本项目采用 [MIT 许可证](LICENSE)。QEMU、MacPorts、Redroid、Android 和 scrcpy 是独立项目，分别遵循各自的许可证。
